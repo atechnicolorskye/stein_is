@@ -10,7 +10,7 @@ def median(x):
     med = tf.floordiv(tf.shape(x)[0], 2)
     check_parity = tf.equal(tf.to_float(med), tf.divide(tf.to_float(tf.shape(x)[0]), 2.))
     def is_true():
-        return tf.reduce_sum(tf.nn.top_k(x, med+1).values[-2:]) / 2.
+        return 0.5 * tf.reduce_sum(tf.nn.top_k(x, med+1).values[-2:])
     def is_false():
         return tf.nn.top_k(x, med+1).values[-1]
     return tf.cond(check_parity, is_true, is_false)
@@ -40,7 +40,7 @@ class GMM(object):
         #            * sum(exp(log(w_i) + log(p_i(x)) + log(-(x - mu)/sigma^2)))
         # Use symbolic differentiation instead
         log_px = self.log_px(x)
-        return tf.gradients(log_px, [x])
+        return tf.gradients(log_px, [x]) # Allowed as there's nothing to sum over
 
 
 class SteinIS(object):
@@ -80,37 +80,39 @@ class SteinIS(object):
         followers = tf.reshape(init_distribution.sample(self.n_followers, seed=123), [self.n_followers, self.dim]) 
         q_density = init_distribution.log_prob(followers)
         leaders = tf.reshape(init_distribution.sample(self.n_leaders, seed=123), [self.n_leaders, self.dim])
-                           
         return followers, q_density, leaders
                              
     def construct_map(self):
         # Calculate ||leader - leader'||^2/h_0, refer to leader as A as in SteinIS
-        x2_A_A_T = tf.multiply(2., tf.matmul(self.A, tf.transpose(self.A)))
-        A_Squared = tf.reduce_sum(tf.square(self.A), 1)
-        A_Distance = tf.add(tf.subtract(A_Squared, x2_A_A_T), tf.transpose(A_Squared))   
+        x2_A_A_T = tf.multiply(2., tf.matmul(self.A, tf.transpose(self.A))) # 100 x 100
+        A_Squared = tf.reduce_sum(tf.square(self.A), 1) # 100 x 1
+        A_Distance = tf.add(tf.subtract(A_Squared, x2_A_A_T), tf.transpose(A_Squared)) # 100 x 100
         # h_0 = tf.divide(tf.add(median(A_Distance), self.eps), 2. * (tf.log(tf.cast(self.n_leaders, tf.float32)) + 1.))
-        h_0 = tf.divide(median(A_Distance), 2. * (tf.log(tf.to_float(self.n_leaders)) + 1.))
-        k_A_A = tf.exp(-tf.div(A_Distance, tf.square(h_0)))
-        sum_grad_A_k_A_A = tf.reduce_sum(tf.gradients(k_A_A, [self.A]), 1)
-        return k_A_A, sum_grad_A_k_A_A, A_Squared, h_0
+        h = tf.divide(tf.square(median(tf.sqrt(A_Distance))), 2. * (tf.log(tf.to_float(self.n_leaders)) + 1.))
+        k_A_A = tf.exp(-tf.div(A_Distance, h))
+        sum_grad_A_k_A_A = []
+        for i in range(self.n_leaders):
+            sum_grad_A_k_A_A.append(tf.reduce_sum(tf.gradients(k_A_A[:, i], self.A)[0]) #  Can't use vanilla tf.gradients as it sums dy/dx wrt to dx, want sum dy/dx wrt to dy
+        sum_grad_A_k_A_A = tf.convert_to_tensor(sum_grad_A_k_A_A)
+        return k_A_A, sum_grad_A_k_A_A, A_Squared, h
     
     def apply_map(self):
         # Calculate ||leader - follower||^2/h_0, refer to follower as B as in SteinIS
         x2_A_B_T = tf.multiply(2., tf.matmul(self.A, tf.transpose(self.B)))
         B_Squared = tf.reduce_sum(tf.square(self.B), 1)
         A_B_Distance  = tf.add(tf.subtract(self.A_Squared, x2_A_B_T), B_Squared)
-        k_A_B = tf.exp(-tf.div(A_B_Distance, tf.square(self.h_0)))
-        sum_grad_A_k_A_B = tf.reduce_sum(tf.gradients(k_A_B, [self.A]), 1)
-        return k_A_B, sum_grad_A_k_A_B 
+        k_A_B = tf.exp(-tf.div(A_B_Distance, self.h))
+        sum_grad_A_k_A_B = tf.gradients(k_A_B, [self.A])
+        return k_A_B, sum_grad_A_k_A_B[0]
                     
     def svgd_update(self):
-        self.k_A_A, self.sum_grad_A_k_A_A, self.A_Squared, self.h_0 = self.construct_map()
+        self.k_A_A, self.sum_grad_A_k_A_A, self.A_Squared, self.h = self.construct_map()
         self.k_A_B, self.sum_grad_A_k_A_B = self.apply_map()
         self.d_log_pA = self.gmm_model.d_log_px(self.A)[0]
-        sum_d_log_pA_T_k_A_A = tf.reduce_sum(tf.matmul(self.k_A_A, self.d_log_pA), 0)       
+        sum_d_log_pA_T_k_A_A = tf.matmul(self.k_A_A, self.d_log_pA) #
         phi_A = (1. / tf.to_float(self.n_leaders)) * tf.add(sum_d_log_pA_T_k_A_A, self.sum_grad_A_k_A_A)
         A = tf.add(self.A, self.step_size * phi_A)  
-        sum_d_log_pA_T_k_A_B = tf.reduce_sum(tf.matmul(self.k_A_B, self.d_log_pA), 0)       
+        sum_d_log_pA_T_k_A_B = tf.matmul(self.k_A_B, self.d_log_pA) #
         phi_B = (1. / tf.to_float(self.n_leaders)) * tf.add(sum_d_log_pA_T_k_A_B, self.sum_grad_A_k_A_B)
         B = tf.add(self.B, self.step_size * phi_B) 
         grad_B_phi_B = tf.gradients(phi_B, [self.B])
@@ -118,17 +120,19 @@ class SteinIS(object):
     
     def density_update(self):
         I = tf.eye(self.dim)
-        inv_abs_det_I_grad_B_phi = tf.map_fn(lambda x: 1./tf.abs(tf.matrix_determinant(tf.add(I, x))), self.grad_B_phi_B)
+        inv_abs_det_I_grad_B_phi = tf.map_fn(lambda x: 1./tf.abs(tf.matrix_determinant(tf.add(I, self.step_size * x))), self.grad_B_phi_B)
         return tf.multiply(self.B_density, inv_abs_det_I_grad_B_phi) 
 
     def main(self, iteration):
         for i in range(1, iteration+1):
             self.step_size = self.step_size_master * (1. + i) ** (-self.step_size_beta)
+            print self.step_size
+
             self.A, self.B, self.phi_B, self.grad_B_phi_B = self.svgd_update()
             self.q_density = self.density_update()
-            if i % 20 == 0:
+            if i % 10 == 0:
                 self.pB = self.gmm_model.log_px(self.B)
-                self.importance_weights = tf.divide(self.q_density, self.pB)
+                self.importance_weights = tf.divide(self.pB, self.q_density)
                 self.normalisation_constant = 1. / tf.to_float(self.n_followers) * tf.reduce_sum(self.importance_weights)
                 print 'Iteration ', str(i), ' done'
         self.final_B = self.B
@@ -157,13 +161,13 @@ gmm = GMM(mu, sigma, weights, dim)
 
 # Stein IS parameters
 initial_mu = np.float32(0.)
-initial_sigma = np.float32(2.)
+initial_sigma = np.float32(1.)
 n_leaders = 100
 n_followers = 100
 model = SteinIS(gmm, initial_mu, initial_sigma, dim, n_leaders, n_followers)
 
 # Verify performance, know that partition function for specified GMM  = 1
-sess.run([model.main(100)])
+sess.run([model.main(10)])
 
 
 
