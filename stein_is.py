@@ -12,16 +12,19 @@ def median(x):
     x = tf.reshape(x, [-1])
     med = tf.floordiv(tf.shape(x)[0], 2)
     check_parity = tf.equal(tf.to_double(med), tf.divide(tf.to_double(tf.shape(x)[0]), 2.))
+
     def is_true():
-        return 0.5 * tf.reduce_sum(tf.nn.top_k(x, med+1).values[-2:]) 
+        return 0.5 * tf.reduce_sum(tf.nn.top_k(x, med + 1).values[-2:])
+
     def is_false():
-        return tf.nn.top_k(x, med+1).values[-1]
-    return tf.cond(check_parity, is_true, is_false) 
+        return tf.nn.top_k(x, med + 1).values[-1]
+
+    return tf.cond(check_parity, is_true, is_false)
 
 
 class GMM(object):
     def __init__(self, mu, sigma, weights, dim):
-        # Required parameters 
+        # Required parameters
         self.mu = mu
         self.sigma = sigma
         self.weights = weights
@@ -33,7 +36,6 @@ class GMM(object):
             mvnd_i = tf.contrib.distributions.MultivariateNormalDiag(mu_, sigma_)
             distributions.append(mvnd_i)
         self.mix = tf.contrib.distributions.Mixture(tf.contrib.distributions.Categorical(probs=self.weights), distributions)
-
 
     def log_px(self, x):
         x_t = tf.convert_to_tensor(x)
@@ -60,7 +62,7 @@ def initialise_variables(mu, sigma, n_leaders, n_followers):
 
 
 class SteinIS(object):
-    def __init__(self, gmm_model, dim, n_leaders, n_followers): # n_trials, step_size=0.01):
+    def __init__(self, gmm_model, dim, n_leaders, n_followers):  # n_trials, step_size=0.01):
         # Required parameters
         self.gmm_model = gmm_model
         self.dim = dim
@@ -74,9 +76,6 @@ class SteinIS(object):
         self.q_density = tf.placeholder(tf.float64, [self.n_followers])
         self.step_size = tf.placeholder(tf.float64, [])
 
-        # Set seed
-        # seed = 30
-        
         # Register functions for debugging
         # k_A_A, sum_grad_A_k_A_A, A_Squared, h = self.construct_map()
         # k_A_B, sum_grad_A_k_A_B = self.apply_map()
@@ -91,9 +90,9 @@ class SteinIS(object):
     def construct_leader_map(self):
         # Calculate ||leader - leader'||^2/h, refer to leader as A as in SteinIS
         with tf.variable_scope('k_A_A'):
-            x2_A_A_T = 2. * tf.matmul(self.A, tf.transpose(self.A)) #
-            self.A_Squared = tf.reduce_sum(tf.square(self.A), keep_dims=True, axis=1)  #
-            A_A_Distance_Squared = self.A_Squared - x2_A_A_T + tf.transpose(self.A_Squared) # 100 x 100
+            x2_A_A_T = 2. * tf.matmul(self.A, tf.transpose(self.A))
+            self.A_Squared = tf.reduce_sum(tf.square(self.A), keep_dims=True, axis=1)
+            A_A_Distance_Squared = self.A_Squared - x2_A_A_T + tf.transpose(self.A_Squared)
             # h_num = tf.square(median(tf.sqrt(A_A_Distance_Squared)))
             h_num = median(A_A_Distance_Squared)
             h_dem = 2. * tf.log(tf.to_double(self.n_leaders) + 1.)
@@ -102,8 +101,8 @@ class SteinIS(object):
             self.k_A_A = tf.exp(-A_A_Distance_Squared / h)
         # Can't use vanilla tf.gradients as it sums dy/dx wrt to dx, want sum dy/dx wrt to dy, tf.map_fn is not available
         # tf.gradients also do not provide accurate gradients in this case
-        with tf.variable_scope('sum_grad_A_k_A_A'):    
-            self.sum_grad_A_k_A_A = tf.reduce_sum([tf.tile(tf.reshape(self.k_A_A[i, :], (-1, 1)), [1, self.dim]) * (-2 * (self.A[i] - self.A) / h) for i in range(self.n_leaders)], axis=0)
+        with tf.variable_scope('sum_grad_A_k_A_A'):
+            self.sum_grad_A_k_A_A = tf.stack([tf.reduce_sum(tf.tile(tf.reshape(self.k_A_A[:, i], (-1, 1)), [1, self.dim]) * (-2 * (self.A - self.A[i]) / h), axis=0) for i in range(self.n_leaders)])
         return self.k_A_A, self.sum_grad_A_k_A_A, self.A_Squared, self.h
 
     def construct_follower_map(self):
@@ -118,14 +117,14 @@ class SteinIS(object):
             # self.h = h_num / h_dem
             self.k_A_B = tf.exp(-A_B_Distance_Squared / self.h)
         with tf.variable_scope('sum_grad_A_k_A_B'):
-            self.sum_grad_A_k_A_B = tf.reduce_sum([tf.tile(tf.reshape(self.k_A_B[i, :], (-1, 1)), [1, self.dim]) * (-2 * (self.A[i] - self.B) / self.h) for i in range(self.n_leaders)], axis=0)
-        return self.k_A_B, self.sum_grad_A_k_A_B #, self.h
+            self.sum_grad_A_k_A_B = tf.stack([tf.reduce_sum(tf.tile(tf.reshape(self.k_A_B[:, i], (-1, 1)), [1, self.dim]) * (-2 * (self.A - self.B[i]) / self.h), axis=0) for i in range(self.n_followers)])
+        return self.k_A_B, self.sum_grad_A_k_A_B  # , self.h
 
     def svgd_update(self):
         with tf.variable_scope('d_log_pA'):
             d_log_pA = self.gmm_model.d_log_px(self.A)
         with tf.variable_scope('n_A'):
-            sum_d_log_pA_T_k_A_A = tf.matmul(self.k_A_A, d_log_pA)
+            sum_d_log_pA_T_k_A_A = tf.matmul(tf.transpose(self.k_A_A), d_log_pA)
             phi_A = (sum_d_log_pA_T_k_A_A + self.sum_grad_A_k_A_A) / self.n_leaders
             self.n_A = self.A + self.step_size * phi_A
         with tf.variable_scope('n_B'):
@@ -136,9 +135,9 @@ class SteinIS(object):
         with tf.variable_scope('grad_B_phi_B'):
             sum_grad_B_grad_A_k_A_B = []
             for i in range(self.n_followers):
-                x = (self.A - self.B[i]) / self.h
-                term_1 = 2 * (tf.reduce_sum(self.k_A_B[:, i]) / self.h) * tf.eye(self.dim, dtype=tf.float64)
-                term_2 = 4 * tf.matmul(tf.transpose(x), tf.matmul(tf.diag(self.k_A_B[:, i]), x))
+                x = 2 * (self.A - self.B[i]) / self.h
+                term_1 = (2 / self.h) * tf.reduce_sum(self.k_A_B[:, i]) * tf.eye(self.dim, dtype=tf.float64)
+                term_2 = tf.matmul(tf.transpose(x), tf.matmul(tf.diag(self.k_A_B[:, i]), x))
                 sum_grad_B_grad_A_k_A_B.append(term_1 - term_2)
             sum_d_log_pA_T_grad_B_k_A_B = tf.stack([tf.matmul(tf.transpose(d_log_pA), tf.matmul(tf.diag(self.k_A_B[:, i]), 2 * (self.A - self.B[i]) / self.h)) for i in range(self.n_followers)])
             # self.sum_d_log_pA_T_grad_A_k_A_B = sum_d_log_pA_T_grad_A_k_A_B
@@ -152,24 +151,25 @@ class SteinIS(object):
 
 # output = '/home/sky/Downloads/stein_is'
 
+# Set seed
+np.random.seed(30)
+
 # Initialise GMM
 # mu = np.array([1., -1.]); sigma = np.sqrt(np.array([0.1, 0.05])); weights = np.array([1./3, 2./3]); dim=6
-mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]])
-sigma = 2 * np.ones(10)
-weights = (1 / 10.0 * np.ones(10))
-dim = 2
+mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
+# mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = 2 * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
 gmm = GMM(mu, sigma, weights, dim)
 
 # Initialise leaders and followers
 initial_mu = np.float64(0.)
-initial_sigma = np.float64(2.)
+initial_sigma = np.sqrt(np.float64(2.))
 n_leaders = 100
 n_followers = 100
 
 # Initialise model
 model = SteinIS(gmm, dim, n_leaders, n_followers)
 
-iterations = 800
+iterations = 1000
 
 step_size_alpha = np.float64(1.)
 step_size_beta = np.float64(0.35)
@@ -179,14 +179,14 @@ with tf.Session() as sess:
     B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers))
 
 with tf.Session() as sess:
-    for i in range(1, iterations+1):
+    for i in range(1, iterations + 1):
         step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
         # pdb.set_trace()
         A, B, q_density = sess.run([model.n_A, model.n_B, model.n_q_density], feed_dict={model.A: A, model.B: B, model.q_density: q_density, model.step_size: step_size})
         if i % 100 == 0:
             normalisation_constant = np.sum(sess.run(model.gmm_model.log_px(B)) / q_density) / n_followers
             print normalisation_constant
-
+            print normalisation_constant - 3.5449077018110318
 print 'Run took', time.time() - start
 
 # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
