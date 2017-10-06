@@ -178,7 +178,6 @@ class SteinIS(object):
                 # sum_grad_B_grad_A_k_A_B_gc.append(tf.reduce_sum((self.sum_grad_A_k_A_Bp[i, :] - self.sum_grad_A_k_A_Bn[i, :]) / 2e-05))
             # self.sum_grad_B_grad_A_k_A_B, self.sum_grad_B_grad_A_k_A_B_gc = tf.stack(sum_grad_B_grad_A_k_A_B), sum_grad_B_grad_A_k_A_B_gc
             # sum_d_log_pA_T_grad_B_k_A_B = tf.stack([ tf.matmul(tf.diag(self.k_A_B[:, i]), 2 * (self.A - self.B[i]) / self.h)) for i in range(self.n_followers)])
-            # self.sum_d_log_pA_T_grad_A_k_A_B = sum_d_log_pA_T_grad_A_k_A_B
             # grad_B_phi_B = (sum_d_log_pA_T_grad_B_k_A_B + tf.stack(sum_grad_B_grad_A_k_A_B)) / self.n_leaders
             grad_B_phi_B = tf.stack(grad_B_phi_B) / self.n_leaders
         with tf.variable_scope('density_update'):
@@ -195,44 +194,46 @@ class SteinIS(object):
 
 MSE = []
 
-# for _ in range(100):
-# Initialise GMM
-# mu = np.array([1., -1.]); sigma = np.sqrt(np.array([0.1, 0.05])); weights = np.array([1./3, 2./3]); dim=6
-#mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
-mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
-gmm = GMM(mu, sigma, weights, dim)
+for _ in range(100):
+    with tf.Graph().as_default():
+        # Initialise GMM
+        # mu = np.array([1., -1.]); sigma = np.sqrt(np.array([0.1, 0.05])); weights = np.array([1./3, 2./3]); dim=6
+        # mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
+        mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
+        gmm = GMM(mu, sigma, weights, dim)
 
-# Initialise leaders and followers
-initial_mu = np.float64(0.)
-initial_sigma = np.sqrt(np.float64(2.))
-n_leaders = 100
-n_followers = 100
+        # Initialise leaders and followers
+        initial_mu = np.float64(0.)
+        initial_sigma = np.sqrt(np.float64(2.))
+        n_leaders = 100
+        n_followers = 100
 
-# Initialise model
-model = SteinIS(gmm, dim, n_leaders, n_followers)
+        # Initialise model
+        model = SteinIS(gmm, dim, n_leaders, n_followers)
 
-iterations = 1000
+        iterations = 1000
 
-step_size_alpha = np.float64(1.)
-step_size_beta = np.float64(0.35)
+        step_size_alpha = np.float64(1.)
+        step_size_beta = np.float64(0.35)
 
-start = time.time()
-with tf.Session() as sess:
-    B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers))
+        log_q_update = np.zeros(n_followers)
 
-log_q_update = np.zeros(n_followers)
+        with tf.Session() as sess:
+            start = time.time()
+            B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers))
+            for i in range(1, iterations + 1):
+                step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
+                # pdb.set_trace()
+                A, B, log_q_update = sess.run([model.n_A, model.n_B, model.n_log_q_update], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
+                if i % 1000 == 0:
+                    normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(B))) / (q_density * np.exp(-log_q_update))) / n_followers
+                    MSE.append((normalisation_constant - 1) ** 2)
+                    # print normalisation_constant
+                    # print normalisation_constant - 3.5449077018110318
+        print 'Run', _, 'took', time.time() - start
 
-with tf.Session() as sess:
-    for i in range(1, iterations + 1):
-        step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
-        # pdb.set_trace()
-        A, B, log_q_update = sess.run([model.n_A, model.n_B, model.n_log_q_update], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
-        if i % 100 == 0:
-            normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(B))) / (q_density * np.exp(-log_q_update))) / n_followers
-            MSE.append((normalisation_constant - 1) ** 2)
-            print normalisation_constant
-            # print normalisation_constant - 3.5449077018110318
-print 'Run', 'took', time.time() - start
+print MSE
+print np.mean(MSE)
 
 # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 # run_metadata = tf.RunMetadata()
