@@ -97,8 +97,8 @@ class SteinIS(object):
             x2_A_A_T = 2. * tf.matmul(self.A, tf.transpose(self.A))
             self.A_Squared = tf.reduce_sum(tf.square(self.A), keep_dims=True, axis=1)
             A_A_Distance_Squared = self.A_Squared - x2_A_A_T + tf.transpose(self.A_Squared)
-            h_num = tf.square(median(tf.sqrt(A_A_Distance_Squared)))
-            # h_num = median(A_A_Distance_Squared)
+            # h_num = tf.square(median(tf.sqrt(A_A_Distance_Squared)))
+            h_num = median(A_A_Distance_Squared)
             h_dem = 2. * tf.log(tf.to_double(self.n_leaders) + 1.)
             h = h_num / h_dem
             self.h = h
@@ -120,7 +120,7 @@ class SteinIS(object):
         # tf.gradients also do not provide accurate gradients in this case
         with tf.variable_scope('sum_grad_A_k_A_A'):
             # self.sum_grad_A_k_A_A = tf.stack([tf.reduce_sum(tf.tile(tf.reshape(self.k_A_A[:, i], (-1, 1)), [1, self.dim]) * (-2 * (self.A - self.A[i]) / h), axis=0) for i in range(self.n_leaders)])
-            self.sum_grad_A_k_A_A = tf.stack([tf.reduce_sum(tf.matmul(tf.diag(self.k_A_A[:, i]), (-2 * (self.A - self.A[i]) / h)), axis=0) for i in range(self.n_leaders)])
+            self.sum_grad_A_k_A_A = tf.stack([tf.squeeze(tf.matmul(tf.reshape(self.k_A_A[:, i], (1, -1)), (-2 * (self.A - self.A[i]) / h))) for i in range(self.n_leaders)])
             # self.sum_grad_A_k_A_A_gc = tf.stack([tf.reduce_sum((self.k_Ap_A[:, i] - self.k_An_A[:, i]) / 2e-5, axis=0) for i in range(self.n_leaders)])
         return self.k_A_A, self.sum_grad_A_k_A_A, self.A_Squared, self.h  # , self.sum_grad_A_k_A_A_gc
 
@@ -151,7 +151,7 @@ class SteinIS(object):
             # k_A_Bn = tf.exp(-A_Bn_Distance_Squared / self.h)
             # self.sum_grad_A_k_A_Bn = tf.stack([tf.reduce_sum(tf.tile(tf.reshape(k_A_Bn[:, i], (-1, 1)), [1, self.dim]) * (-2 * (self.A - Bn[i]) / self.h), axis=0) for i in range(self.n_followers)])
         with tf.variable_scope('sum_grad_A_k_A_B'):
-            self.sum_grad_A_k_A_B = tf.stack([tf.reduce_sum(tf.matmul(tf.diag(self.k_A_B[:, i]), (-2 * (self.A - self.B[i]) / self.h)), axis=0) for i in range(self.n_followers)])
+            self.sum_grad_A_k_A_B = tf.stack([tf.squeeze(tf.matmul(tf.reshape(self.k_A_B[:, i], (1, -1)), (-2 * (self.A - self.B[i]) / self.h))) for i in range(self.n_followers)])
             # self.sum_grad_A_k_A_B = tf.stack([tf.reduce_sum(tf.tile(tf.reshape(self.k_A_B[:, i], (-1, 1)), [1, self.dim]) * (-2 * (self.A - self.B[i]) / self.h), axis=0) for i in range(self.n_followers)])
         return self.k_A_B, self.sum_grad_A_k_A_B  # , self.sum_grad_A_k_A_Bp, self.sum_grad_A_k_A_Bn, self.h
 
@@ -168,18 +168,19 @@ class SteinIS(object):
             self.n_B = self.B + self.step_size * phi_B
         # See http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf
         with tf.variable_scope('grad_B_phi_B'):
-            sum_grad_B_grad_A_k_A_B = []
+            grad_B_phi_B = []
             # sum_grad_B_grad_A_k_A_B_gc = []
             for i in range(self.n_followers):
                 x = 2 * (self.A - self.B[i]) / self.h
                 term_1 = (2 / self.h) * tf.reduce_sum(self.k_A_B[:, i]) * tf.eye(self.dim, dtype=tf.float64)
-                term_2 = tf.matmul(tf.transpose(x), tf.matmul(tf.diag(self.k_A_B[:, i]), x))
-                sum_grad_B_grad_A_k_A_B.append(term_1 - term_2)
+                term_2 = tf.matmul((tf.transpose(d_log_pA) - tf.transpose(x)), tf.matmul(tf.diag(self.k_A_B[:, i]), x))
+                grad_B_phi_B.append(term_1 + term_2)
                 # sum_grad_B_grad_A_k_A_B_gc.append(tf.reduce_sum((self.sum_grad_A_k_A_Bp[i, :] - self.sum_grad_A_k_A_Bn[i, :]) / 2e-05))
             # self.sum_grad_B_grad_A_k_A_B, self.sum_grad_B_grad_A_k_A_B_gc = tf.stack(sum_grad_B_grad_A_k_A_B), sum_grad_B_grad_A_k_A_B_gc
-            sum_d_log_pA_T_grad_B_k_A_B = tf.stack([tf.matmul(tf.transpose(d_log_pA), tf.matmul(tf.diag(self.k_A_B[:, i]), 2 * (self.A - self.B[i]) / self.h)) for i in range(self.n_followers)])
+            # sum_d_log_pA_T_grad_B_k_A_B = tf.stack([ tf.matmul(tf.diag(self.k_A_B[:, i]), 2 * (self.A - self.B[i]) / self.h)) for i in range(self.n_followers)])
             # self.sum_d_log_pA_T_grad_A_k_A_B = sum_d_log_pA_T_grad_A_k_A_B
-            grad_B_phi_B = (sum_d_log_pA_T_grad_B_k_A_B + tf.stack(sum_grad_B_grad_A_k_A_B)) / self.n_leaders
+            # grad_B_phi_B = (sum_d_log_pA_T_grad_B_k_A_B + tf.stack(sum_grad_B_grad_A_k_A_B)) / self.n_leaders
+            grad_B_phi_B = tf.stack(grad_B_phi_B) / self.n_leaders
         with tf.variable_scope('density_update'):
             I = tf.eye(self.dim, dtype=tf.float64)
             log_abs_det_I_grad_B_phi_B = tf.map_fn(lambda x: tf.log(tf.abs(tf.matrix_determinant(I + self.step_size * x))), grad_B_phi_B)
@@ -192,9 +193,12 @@ class SteinIS(object):
 # Set seed
 # np.random.seed(30)
 
+MSE = []
+
+# for _ in range(100):
 # Initialise GMM
 # mu = np.array([1., -1.]); sigma = np.sqrt(np.array([0.1, 0.05])); weights = np.array([1./3, 2./3]); dim=6
-# mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
+#mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
 mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
 gmm = GMM(mu, sigma, weights, dim)
 
@@ -225,10 +229,10 @@ with tf.Session() as sess:
         A, B, log_q_update = sess.run([model.n_A, model.n_B, model.n_log_q_update], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
         if i % 100 == 0:
             normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(B))) / (q_density * np.exp(-log_q_update))) / n_followers
-            # print normalisation_constant
+            MSE.append((normalisation_constant - 1) ** 2)
+            print normalisation_constant
             # print normalisation_constant - 3.5449077018110318
-    print normalisation_constant
-print 'Run took', time.time() - start
+print 'Run', 'took', time.time() - start
 
 # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 # run_metadata = tf.RunMetadata()
