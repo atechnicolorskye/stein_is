@@ -1,11 +1,10 @@
 import numpy as np
-import scipy as sp
 import tensorflow as tf
 import tensorflow.contrib.distributions as ds
 import time
-from tensorflow.python.client import timeline
+# from tensorflow.python.client import timeline
 
-import pdb
+# import pdb
 
 
 def median(x):
@@ -22,6 +21,38 @@ def median(x):
     return tf.cond(check_parity, is_true, is_false)
 
 
+# https://stackoverflow.com/questions/44194063/calculate-log-of-determinant-in-tensorflow-when-determinant-overflows-underflows
+# from https://gist.github.com/harpone/3453185b41d8d985356cbe5e57d67342
+# Define custom py_func which takes also a grad op as argument:
+def py_func(func, inp, Tout, stateful=True, name=None, grad=None):
+    # Need to generate a unique name to avoid duplicates:
+    rnd_name = 'PyFuncGrad' + str(np.random.randint(0, 1E+8))
+    tf.RegisterGradient(rnd_name)(grad)  # see _MySquareGrad for grad example
+    g = tf.get_default_graph()
+    with g.gradient_override_map({"PyFunc": rnd_name}):
+        return tf.py_func(func, inp, Tout, stateful=stateful, name=name)
+
+
+# from https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/ops/linalg_grad.py
+# Gradient for logdet
+def logdet_grad(op, grad):
+    a = op.inputs[0]
+    a_adj_inv = tf.matrix_inverse(a, adjoint=True)
+    out_shape = tf.concat([tf.shape(a)[:-2], [1, 1]], axis=0)
+    return tf.reshape(grad, out_shape) * a_adj_inv
+
+
+# Define logdet by calling numpy.linalg.slogdet
+def logdet(a, name=None):
+    with tf.name_scope(name, 'LogDet', [a]) as name:
+        res = py_func(lambda a: np.linalg.slogdet(a)[1],
+                      [a],
+                      tf.float64,
+                      name=name,
+                      grad=logdet_grad)  # set the gradient
+        return res
+
+
 class GMM(object):
     def __init__(self, mu, sigma, weights, dim):
         # Required parameters
@@ -33,6 +64,7 @@ class GMM(object):
         distributions = []
         for i in range(weights.shape[0]):
             mu_, sigma_ = self.mu[i] * np.ones(dim), self.sigma[i] * np.ones(dim)
+            print mu_, sigma_
             mvnd_i = tf.contrib.distributions.MultivariateNormalDiag(mu_, sigma_)
             distributions.append(mvnd_i)
         self.mix = tf.contrib.distributions.Mixture(tf.contrib.distributions.Categorical(probs=self.weights), distributions)
@@ -157,13 +189,17 @@ class SteinIS(object):
 
     def svgd_update(self):
         with tf.variable_scope('d_log_pA'):
+            self.log_pA = self.gmm_model.log_px(self.A)
             d_log_pA = self.gmm_model.d_log_px(self.A)
+            self.d_log_pA = d_log_pA
         with tf.variable_scope('n_A'):
             sum_d_log_pA_T_k_A_A = tf.matmul(tf.transpose(self.k_A_A), d_log_pA)
+            self.sum_d_log_pA_T_k_A_A = sum_d_log_pA_T_k_A_A
             phi_A = (sum_d_log_pA_T_k_A_A + self.sum_grad_A_k_A_A) / self.n_leaders
             self.n_A = self.A + self.step_size * phi_A
         with tf.variable_scope('n_B'):
             sum_d_log_pA_T_k_A_B = tf.matmul(tf.transpose(self.k_A_B), d_log_pA)
+            self.sum_d_log_pA_T_k_A_B = sum_d_log_pA_T_k_A_B
             phi_B = (sum_d_log_pA_T_k_A_B + self.sum_grad_A_k_A_B) / self.n_leaders
             self.n_B = self.B + self.step_size * phi_B
         # See http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf
@@ -180,11 +216,13 @@ class SteinIS(object):
             # sum_d_log_pA_T_grad_B_k_A_B = tf.stack([ tf.matmul(tf.diag(self.k_A_B[:, i]), 2 * (self.A - self.B[i]) / self.h)) for i in range(self.n_followers)])
             # grad_B_phi_B = (sum_d_log_pA_T_grad_B_k_A_B + tf.stack(sum_grad_B_grad_A_k_A_B)) / self.n_leaders
             grad_B_phi_B = tf.stack(grad_B_phi_B) / self.n_leaders
+            # self.grad_B_phi_B = grad_B_phi_B
         with tf.variable_scope('density_update'):
             I = tf.eye(self.dim, dtype=tf.float64)
-            log_abs_det_I_grad_B_phi_B = tf.map_fn(lambda x: tf.log(tf.abs(tf.matrix_determinant(I + self.step_size * x))), grad_B_phi_B)
+            # self.I_grad_B_phi_B = tf.map_fn(lambda x: (I + self.step_size * x), grad_B_phi_B)
+            log_abs_det_I_grad_B_phi_B = tf.map_fn(lambda x: logdet(I + self.step_size * x), grad_B_phi_B)
             self.n_log_q_update = self.log_q_update + log_abs_det_I_grad_B_phi_B
-        return self.n_A, self.n_B, self.n_log_q_update  # , self.sum_grad_B_grad_A_k_A_B, self.sum_grad_B_grad_A_k_A_B_gc
+        return self.n_A, self.n_B, self.n_log_q_update  # , self.I_grad_B_phi_B, self.grad_B_phi_B , self.sum_grad_B_grad_A_k_A_B, self.sum_grad_B_grad_A_k_A_B_gc
 
 
 # output = '/home/sky/Downloads/stein_is'
@@ -194,26 +232,26 @@ class SteinIS(object):
 
 MSE = []
 
-for _ in range(100):
+for _ in range(500):
     with tf.Graph().as_default():
         # Initialise GMM
-        # mu = np.array([1., -1.]); sigma = np.sqrt(np.array([0.1, 0.05])); weights = np.array([1./3, 2./3]); dim=6
+        mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights = np.array([1. / 3, 2. / 3]); dim = 6
         # mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
-        mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
+        # mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
         gmm = GMM(mu, sigma, weights, dim)
 
         # Initialise leaders and followers
         initial_mu = np.float64(0.)
-        initial_sigma = np.sqrt(np.float64(2.))
+        initial_sigma = np.sqrt(np.float64(.1))
         n_leaders = 100
         n_followers = 100
 
         # Initialise model
         model = SteinIS(gmm, dim, n_leaders, n_followers)
 
-        iterations = 1000
+        iterations = 800
 
-        step_size_alpha = np.float64(1.)
+        step_size_alpha = np.float64(.01)
         step_size_beta = np.float64(0.35)
 
         log_q_update = np.zeros(n_followers)
@@ -224,16 +262,22 @@ for _ in range(100):
             for i in range(1, iterations + 1):
                 step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
                 # pdb.set_trace()
-                A, B, log_q_update = sess.run([model.n_A, model.n_B, model.n_log_q_update], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
-                if i % 1000 == 0:
+                A, B, log_q_update, k_A_A, k_A_B, log_pA, d_log_pA = sess.run([model.n_A, model.n_B, model.n_log_q_update, model.k_A_A, model.k_A_B, model.log_pA, model.d_log_pA], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
+                # pdb.set_trace()
+                A_ = A
+                B_ = B
+                log_q_update_ = log_q_update
+                k_A_A_ = k_A_A
+                k_A_B_ = k_A_B
+                d_log_pA_ = d_log_pA
+                if i % 800 == 0:
                     normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(B))) / (q_density * np.exp(-log_q_update))) / n_followers
-                    MSE.append((normalisation_constant - 1) ** 2)
+                    MSE.append((normalisation_constant - 0.000744) ** 2)
                     # print normalisation_constant
-                    # print normalisation_constant - 3.5449077018110318
-        print 'Run', _, 'took', time.time() - start
+        print('Run', str(_), 'took', str(time.time() - start))
 
-print MSE
-print np.mean(MSE)
+print(MSE)
+print(np.mean(MSE))
 
 # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 # run_metadata = tf.RunMetadata()
