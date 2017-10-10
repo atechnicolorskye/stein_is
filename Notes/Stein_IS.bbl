@@ -1,0 +1,68 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 2.8 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \sortlist[entry]{ynt/global/}
+    \entry{duchi2016lecture}{article}{}
+      \name{author}{1}{}{%
+        {{hash=b8fbef1897da5bf46822ced31bc865c6}{%
+           family={Duchi},
+           familyi={D\bibinitperiod},
+           given={John},
+           giveni={J\bibinitperiod}}}%
+      }
+      \strng{namehash}{b8fbef1897da5bf46822ced31bc865c6}
+      \strng{fullhash}{b8fbef1897da5bf46822ced31bc865c6}
+      \strng{authornamehash}{b8fbef1897da5bf46822ced31bc865c6}
+      \strng{authorfullhash}{b8fbef1897da5bf46822ced31bc865c6}
+      \field{labelalpha}{Duc16}
+      \field{sortinit}{2}
+      \field{sortinithash}{0aa614ace9f3a40ef5a67e7f7a184048}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{title}{Lecture Notes for Statistics 311/Electrical Engineering 377}
+      \field{year}{2016}
+    \endentry
+    \entry{grosse2013}{manual}{}
+      \name{author}{1}{}{%
+        {{hash=7bfa5101481b4cfcddf46d2915b6ad49}{%
+           family={Grosse},
+           familyi={G\bibinitperiod},
+           given={Roger},
+           giveni={R\bibinitperiod}}}%
+      }
+      \strng{namehash}{7bfa5101481b4cfcddf46d2915b6ad49}
+      \strng{fullhash}{7bfa5101481b4cfcddf46d2915b6ad49}
+      \strng{authornamehash}{7bfa5101481b4cfcddf46d2915b6ad49}
+      \strng{authorfullhash}{7bfa5101481b4cfcddf46d2915b6ad49}
+      \field{labelalpha}{Gro17}
+      \field{sortinit}{2}
+      \field{sortinithash}{0aa614ace9f3a40ef5a67e7f7a184048}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{title}{Fisher Information}
+      \field{year}{2013 (accessed September 6, 2017)}
+      \verb{url}
+      \verb https://web.archive.org/web/20140829105235/https://hips.seas.harvard.edu/blog/2013/04/08/fisher-information/
+      \endverb
+    \endentry
+  \endsortlist
+\endrefsection
+\endinput
+

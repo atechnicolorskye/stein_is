@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.distributions as ds
@@ -64,7 +66,7 @@ class GMM(object):
         distributions = []
         for i in range(weights.shape[0]):
             mu_, sigma_ = self.mu[i] * np.ones(dim), self.sigma[i] * np.ones(dim)
-            print mu_, sigma_
+            # print(mu_, sigma_)
             mvnd_i = tf.contrib.distributions.MultivariateNormalDiag(mu_, sigma_)
             distributions.append(mvnd_i)
         self.mix = tf.contrib.distributions.Mixture(tf.contrib.distributions.Categorical(probs=self.weights), distributions)
@@ -231,51 +233,58 @@ class SteinIS(object):
 # np.random.seed(30)
 
 MSE = []
+total_run_time = 0
+n_runs = 500
 
-for _ in range(500):
-    with tf.Graph().as_default():
-        # Initialise GMM
-        mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights = np.array([1. / 3, 2. / 3]); dim = 6
-        # mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
-        # mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
-        gmm = GMM(mu, sigma, weights, dim)
+with tf.Session() as sess:
+    sess_start = time.time()
 
-        # Initialise leaders and followers
-        initial_mu = np.float64(0.)
-        initial_sigma = np.sqrt(np.float64(.1))
-        n_leaders = 100
-        n_followers = 100
+    # Initialise leaders and followers
+    initial_mu = np.float64(0.)
+    initial_sigma = np.sqrt(np.float64(.5))
+    n_leaders = 100
+    n_followers = 100
+    log_q_update = np.zeros(n_followers)
 
-        # Initialise model
-        model = SteinIS(gmm, dim, n_leaders, n_followers)
+    # Set parameters
+    iterations = 800
+    step_size_alpha = np.float64(.005)
+    step_size_beta = np.float64(0.5)
 
-        iterations = 800
+    # Initialise GMM
+    mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights = np.array([1. / 3, 2. / 3]); dim = 6
+    # mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
+    # mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
+    gmm = GMM(mu, sigma, weights, dim)
 
-        step_size_alpha = np.float64(.01)
-        step_size_beta = np.float64(0.35)
+    # Initialise model
+    model = SteinIS(gmm, dim, n_leaders, n_followers)
+    writer = tf.summary.FileWriter('Graphs', graph=tf.get_default_graph())
 
-        log_q_update = np.zeros(n_followers)
+    for _ in range(n_runs):
+        run_start = time.time()
+        B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers))
+        for i in range(1, iterations + 1):
+            step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
+            # pdb.set_trace()
+            A, B, log_q_update, k_A_A, k_A_B, log_pA, d_log_pA = sess.run([model.n_A, model.n_B, model.n_log_q_update, model.k_A_A, model.k_A_B, model.log_pA, model.d_log_pA], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
+            # pdb.set_trace()
+            A_ = A
+            B_ = B
+            log_q_update_ = log_q_update
+            k_A_A_ = k_A_A
+            k_A_B_ = k_A_B
+            d_log_pA_ = d_log_pA
+            if i % 800 == 0:
+                normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(B))) / (q_density * np.exp(-log_q_update))) / n_followers
+                MSE.append((normalisation_constant - 0.000744) ** 2)
+                # print normalisation_constant
+            run_time = time.time() - run_start
+        print('Run', str(_), 'took', str(run_time))
 
-        with tf.Session() as sess:
-            start = time.time()
-            B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers))
-            for i in range(1, iterations + 1):
-                step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
-                # pdb.set_trace()
-                A, B, log_q_update, k_A_A, k_A_B, log_pA, d_log_pA = sess.run([model.n_A, model.n_B, model.n_log_q_update, model.k_A_A, model.k_A_B, model.log_pA, model.d_log_pA], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
-                # pdb.set_trace()
-                A_ = A
-                B_ = B
-                log_q_update_ = log_q_update
-                k_A_A_ = k_A_A
-                k_A_B_ = k_A_B
-                d_log_pA_ = d_log_pA
-                if i % 800 == 0:
-                    normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(B))) / (q_density * np.exp(-log_q_update))) / n_followers
-                    MSE.append((normalisation_constant - 0.000744) ** 2)
-                    # print normalisation_constant
-        print('Run', str(_), 'took', str(time.time() - start))
+print(str(n_runs), 'runs took', str(time.time() - sess_start))
 
+np.save('a_' + str(step_size_alpha) + '_b_' + str(step_size_beta) + '_' + str(n_runs) + '_AIS_MSE.npy', MSE)
 print(MSE)
 print(np.mean(MSE))
 

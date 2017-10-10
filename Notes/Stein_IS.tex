@@ -1,0 +1,148 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Ce gabarit peu servir autant les philosophes que les scientifiques ; 
+% et même d'autres genres, vous en faites ce que vous voulez.
+% J'ai modifié et partagé ce gabarit afin d'épargner � d'autres 
+% d'interminables heures � modifier des gabarits d'articles anglais. 
+% 
+% L'ajout d'une table des matières et une bibliographie a été ajoutée,
+% rendant le gabarit plus ajusté aux besoins de plusieurs.
+%
+% Pour retrouvé le gabarit original, veuillez télécharger les
+% documents suivants: llncs2e.zip (.cls et autres) et 
+% typeinst.zip (.tex). Les documents ci-haut mentionnés ne sont pas 
+% disponibles au même endroit, alors je vous invite � fouiller le web. 
+%
+% Pour l'instant (02-2016) ils sont disponibles tous deux ici :
+%
+% http://kawahara.ca/springer-lncs-latex-template/
+%
+% Netkompt
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%% file typeinst.tex %%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% This is the LaTeX source for the instructions to authors using
+% the LaTeX document class 'llncs.cls' for contributions to
+% the Lecture Notes in Computer Sciences series.
+% http://www.springer.com/lncs       Springer Heidelberg 2006/05/04
+%
+% It may be used as a template for your own input - copy it
+% to a new file with a new name and use it as the basis
+% for your article.
+%
+% NB: the document class 'llncs' has its own and detailed documentation, see
+% ftp://ftp.springer.de/data/pubftp/pub/tex/latex/llncs/latex2e/llncsdoc.pdf
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% !BIB TS-program = biber
+
+\documentclass[runningheads, a4paper]{llncs}
+
+\usepackage[utf8]{inputenc}
+
+\usepackage[
+backend=biber,
+style=alphabetic,
+sorting=ynt
+]{biblatex}
+\addbibresource{references.bib}
+
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{dsfont}
+\setcounter{tocdepth}{3}
+\usepackage{graphicx}
+
+\usepackage{url}
+\newcommand{\keywords}[1]{\par\addvspace\baselineskip
+\noindent\keywordname\enspace\ignorespaces#1}
+
+\begin{document}
+
+\mainmatter 
+
+\title{Stein Variational Importance Sampling}
+
+\author{Sky}
+
+\institute{}
+
+\maketitle
+
+\medskip
+
+\section{Algorithm}
+According to section 5 of the paper, the authors use the RBF kernel $k(x, x') = \exp(-||x -x'||^2/h)$ with $h$ being the kernel bandwidth. $h$ is defined as $\textrm{med}^2 / (2 \log (|A| +1))$ where $\textrm{med}$ is the median of the pairwise distances between the leader particles and $|A|$ is the number of leader particles. (Note: The authors took the median of the squared pairwise distances between the leader particles.)
+
+\subsection{Construct mapping for leaders}
+We first construct the map using the leader particles $x^{\ell}_A$ with $\ell$ representing the $\ell$th iteration.  The pairwise distances $||x - x'||$ are already computed when defining the kernel.\\
+
+\noindent
+Compute the kernel by expanding the numerator that is exponentiated:
+\begin{align}
+||x_A - x_A'||^2
+&= x_A^T x_A - 2 x_A^T x_A' + x_A'^T x_A'
+\end{align}
+Find the median pairwise distance by taking the square root of $||x_A - x_A'||^2$ and checking if it is odd or even. If it is odd, pick the median else take the mean of the two middle values. Square the median and divide by $2 \log (|A| +1)$. With the above, we have the kernel of the leader particles.\\
+
+\noindent
+Assume that we have $\nabla \log p(x^{\ell}_A)$ obtained using automatic differentiation. Automatic differentiation in Tensorflow is implemented such that it accumulates the variable we are differentiating by. Since the operation $\nabla \log p(x^{\ell}_A)$ only accumulates each particle once, it is safe to employ automatic differentiation here.\\
+
+\noindent
+However, computing the Jacobian of the kernel $\nabla_{x_A} k(x_A, x_A')$ leads to accumulation of each particle $|A|$ times so we have to do it by hand:
+\begin{align}
+\nabla_{x_A} k(x_A, x_A')
+&= \nabla_{x_A} \exp (- (x_A^T x_A - 2 x_A^T x_A' + x_A'^T x_A') / h) \textrm{ with $h$ being constant}\\
+&= -\frac{2(x_A -  x_A')}{h} \exp (- ||x_A - x_A'||^2 / h)
+\end{align}
+
+\noindent
+Since the update $\phi_A^{\ell+1}$ consist of two terms being added together and we are performing a sum over them, the operations are commutative so we can split it up into adding the sum of one term to the sum of the other. Hence $\phi_A^{\ell+1}(\cdot)$ is equivalent to $\frac{1}{|A|} \{k(x_A, \cdot)^T \nabla \log p(x_A) + \sum_j -\frac{2(x_{A_j} - \cdot)}{h} \exp (- ||x_{A_j} - \cdot||^2 / h)\}$.
+
+\subsection{Construct mapping for followers}
+We do the same for the followers:
+\begin{itemize}
+\item $||x_A - x_B||^2 = x_A^T x_A - 2 x_A^T x_B + x_B^T x_B$
+\item $\nabla_{x_A} k(x_A, x_B) = -\frac{2(x_A -  x_B)}{h} \exp (- ||x_A - x_B||^2 / h)$
+\item $\phi_B^{\ell+1}(\cdot) = \frac{1}{|A|} \{k(x_A, \cdot)^T \nabla \log p(x_A) + \sum_j -\frac{2(x_{A_j} - \cdot)}{h} \exp (- ||x_{A_j} - \cdot||^2 / h)\}$
+\end{itemize}
+
+\subsection{Update leaders and followers}
+Update $\phi_A$ and $\phi_B$ to both leader and follower particle by adding $\epsilon * \phi$ to them.
+
+\subsection{Calculate density values of followers}
+We now compute $\nabla _{x_{B_i}} \phi_B(x_{B_i}) = \frac{1}{A} \sum_{A} [\nabla_{x_A} \log p(x_{B_i})^T \nabla_{x_{B_i}}k(x_A, x_{B_i}) + \nabla_{x_As} \nabla_{x_{B_i}} k(x_A, x_{B_i})]$. Like before but with a slight tweak, $\nabla_{x_{B_i}} k(x_A , x_{B_i})$ is:
+\begin{align}
+\nabla_{x_{B_i}} \exp (- (x_A^T x_A - 2 x_A^T x_{B_i} + x_{B_i}^T x_{B_i}) / h)
+&= \frac{2(x_A -  x_{B_i})}{h} \exp (- ||x_A - x_{B_i}||^2 / h)
+\end{align}  
+Shifting the focus to the $\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i})$ term, we begin with the above result
+\begin{align}
+&\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i}) \\ 
+&= \nabla_{x_A} \frac{2(x_A -  x_{B_i})}{h} \exp (- ||x_A - x_{B_i}||^2 / h) \\
+&= \frac{2}{h} [\nabla_{x_A} x_A  \exp (- ||x_A - x_{B_i}||^2 / h) + \nabla_{x_A} x_{B_i} \exp (- ||x_A - x_{B_i}||^2 / h)] \\
+&= \frac{2}{h} [I -  \frac{2(x_A -  x_{B_i})}{h} x_A^T -  \frac{2(x_A -  x_{B_i})}{h} x_{B_i}^T]\exp (- ||x_A - x_{B_i}||^2 / h) \\
+&= \frac{2}{h} [I -  \frac{2}{h}(x_A -  x_{B_i})(x_A - x_{B_i})^T]\exp (- ||x_A - x_{B_i}||^2 / h)
+\end{align}
+Hence, we have
+\begin{align}
+\nabla_{x_{B_i}} \phi_B(x_{B_i}) 
+&= \frac{1}{|A|} \sum_{j \in  A} [\nabla_{x_{A_j}} \log p(x_{A_j})^T \frac{2(x_{A_j} -  x_{B_i})}{h} \exp (- ||x_{A_j} - x_{B_i}||^2 / h)) \nonumber \\
+&+ \frac{2}{h} (I -  \frac{2}{h}(x_{A_j} -  x_{B_i})(x_{A_j} - x_{B_i})^T)\exp (- ||x_{A_j} - x_{B_i}||^2 / h)] \\ 
+&= \frac{1}{|A|} [\nabla_{x_A} \log p(x_A)^T \cdot \textrm{diag}(\exp(- ||x_A - x_{B_i}||^2 / h))  \cdot \frac{2(x_A -  x_{B_i})}{h} \nonumber \\ 
+&+ \left(\frac{2}{h} \cdot \sum_{j \in A}  I \cdot \exp (- ||x_{A_j} - x_{B_i}||^2 / h)\right) \nonumber \\
+&- \frac{2(x_A -  x_{B_i})}{h}^T \cdot \textrm{diag}(\exp(- ||x_A - x_{B_i}||^2 / h)) \cdot \frac{2(x_A -  x_{B_i})}{h}]
+\end{align}
+
+\subsection{Update density values of followers}
+With $\nabla_{x_{B_i}} \phi_B(x_{B_i})$ in hand, we update the density values using the last equation of the Stein IS algorithm by using Tensorflow to compute the absolute determinant of $I + \epsilon \nabla_{x_{B_i}} \phi_B(x_{B_i})$ and multiplying the current density values by the inverse of the result. 
+
+\end{document}
