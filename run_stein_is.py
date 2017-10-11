@@ -98,14 +98,15 @@ if __name__ == '__main__':
     
     # Multiprocessing
     start_time = time.time()
+    result = []
     pool = Pool(processes=num_processes)
-    result = pool.map_async(stein_is_session, params)
-    MSE = np.array((result.get())).flatten()
+    for i in range(num_processes):
+        with tf.device('/gpu:%d' % i):
+            result.append(pool.apply_async(stein_is_session, [params[i]]))
+    MSE = np.array(([r.get() for r in result])).flatten()
+    pool.close()
     # Alternative
-    # result = []
-    # for i in range(num_processes):
-    #     result.append(pool.apply_async(stein_is_session, [i]))
-    # result = [r.get() for r in result]
+    # result = pool.map_async(stein_is_session, params)
     print(time.time() - start_time)    
     
     # for gpu_id in range(num_processes):
