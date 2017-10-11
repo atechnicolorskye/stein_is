@@ -3,7 +3,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.distributions as ds
-import time
+# import time
 # from tensorflow.python.client import timeline
 
 # import pdb
@@ -54,7 +54,7 @@ def logdet(a, name=None):
                       grad=logdet_grad)  # set the gradient
         return res
 
-
+# GMM
 class GMM(object):
     def __init__(self, mu, sigma, weights, dim):
         # Required parameters
@@ -86,8 +86,7 @@ class GMM(object):
         x_t = tf.convert_to_tensor(x)
         return tf.gradients(self.log_px(x_t), [x_t])[0]  # , d_log_px_gc
 
-
-def initialise_variables(mu, sigma, n_leaders, n_followers):
+def initialise_variables(mu, sigma, n_leaders, n_followers, dim):
     # For replicating Neal
     # followers = tf.reshape(init_distribution.sample(self.n_trials * self.n_followers, seed=123), [self.n_trials, self.n_followers, self.h_dim]
     # leaders = tf.reshape(init_distribution.sample(self.n_trials * self.n_leaders, seed=123), [self.n_trials, self.n_leaders, self.h_dim]
@@ -97,7 +96,6 @@ def initialise_variables(mu, sigma, n_leaders, n_followers):
     q_density = init_distribution.prob(followers)
     leaders = init_distribution.sample(n_leaders)
     return followers, q_density, leaders
-
 
 class SteinIS(object):
     def __init__(self, gmm_model, dim, n_leaders, n_followers):  # n_trials, step_size=0.01):
@@ -225,75 +223,6 @@ class SteinIS(object):
             log_abs_det_I_grad_B_phi_B = tf.map_fn(lambda x: logdet(I + self.step_size * x), grad_B_phi_B)
             self.n_log_q_update = self.log_q_update + log_abs_det_I_grad_B_phi_B
         return self.n_A, self.n_B, self.n_log_q_update  # , self.I_grad_B_phi_B, self.grad_B_phi_B , self.sum_grad_B_grad_A_k_A_B, self.sum_grad_B_grad_A_k_A_B_gc
-
-
-# output = '/home/sky/Downloads/stein_is'
-
-# Set seed
-# np.random.seed(30)
-
-MSE = []
-total_run_time = 0
-n_runs = 500
-
-with tf.Session() as sess:
-    sess_start = time.time()
-
-    # Initialise leaders and followers
-    initial_mu = np.float64(0.)
-    initial_sigma = np.sqrt(np.float64(.5))
-    n_leaders = 100
-    n_followers = 100
-    log_q_update = np.zeros(n_followers)
-
-    # Set parameters
-    iterations = 800
-    step_size_alpha = np.float64(.005)
-    step_size_beta = np.float64(0.5)
-
-    # Initialise GMM
-    mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights = np.array([1. / 3, 2. / 3]); dim = 6
-    # mu = np.array([1.]); sigma = np.sqrt(np.array([2.0])); weights = np.array([1.]); dim = 1
-    # mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0 * np.ones(10)); dim = 2
-    gmm = GMM(mu, sigma, weights, dim)
-
-    # Initialise model
-    model = SteinIS(gmm, dim, n_leaders, n_followers)
-    writer = tf.summary.FileWriter('Graphs', graph=tf.get_default_graph())
-
-    for _ in range(n_runs):
-        run_start = time.time()
-        B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers))
-        for i in range(1, iterations + 1):
-            step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
-            # pdb.set_trace()
-            A, B, log_q_update, k_A_A, k_A_B, log_pA, d_log_pA = sess.run([model.n_A, model.n_B, model.n_log_q_update, model.k_A_A, model.k_A_B, model.log_pA, model.d_log_pA], feed_dict={model.A: A, model.B: B, model.log_q_update: log_q_update, model.step_size: step_size})
-            # pdb.set_trace()
-            A_ = A
-            B_ = B
-            log_q_update_ = log_q_update
-            k_A_A_ = k_A_A
-            k_A_B_ = k_A_B
-            d_log_pA_ = d_log_pA
-            if i % 800 == 0:
-                normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(B))) / (q_density * np.exp(-log_q_update))) / n_followers
-                MSE.append((normalisation_constant - 0.000744) ** 2)
-                # print normalisation_constant
-            run_time = time.time() - run_start
-        print('Run', str(_), 'took', str(run_time))
-
-print(str(n_runs), 'runs took', str(time.time() - sess_start))
-
-np.save('a_' + str(step_size_alpha) + '_b_' + str(step_size_beta) + '_' + str(n_runs) + '_AIS_MSE.npy', MSE)
-print(MSE)
-print(np.mean(MSE))
-
-# run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-# run_metadata = tf.RunMetadata()
-# tl = timeline.Timeline(run_metadata.step_stats)
-# ctf = tl.generate_chrome_trace_format()
-# with open(output + '/timeline.json', 'w') as f:
-#     f.write(ctf)
 
 # Look into using einsum https://www.tensorflow.org/api_docs/python/tf/einsum
 # for i in range(n_followers):
