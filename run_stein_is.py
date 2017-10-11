@@ -32,27 +32,15 @@ import pdb
 #         step_size_alpha = step_size_alpha
 #         step_size_beta = step_size_beta
 
-def stein_is_session(i):
-    # n_run, initial_mu, initial_sigma, n_leaders, n_followers, iterations, step_size_alpha, step_size_beta
+def stein_is_session(params):
     with tf.Session(config=tf.ConfigProto(
         inter_op_parallelism_threads=1,
         intra_op_parallelism_threads=1
     )
-    )as sess:
-        print('Session', str(i), 'has started')
+    )as sess: 
+        [n_runs, initial_mu, initial_sigma, n_leaders, n_followers, iterations, step_size_alpha, step_size_beta, sess_num] = params
+        print('Session', str(sess_num), 'has started')
         
-        # Model parameters
-        initial_mu = np.float64(0.)
-        initial_sigma = np.sqrt(np.float64(.2))
-        n_leaders = 100
-        n_followers = 100
-        
-        # Hyperparameters
-        n_runs = 2
-        iterations = 800
-        step_size_alpha = np.float64(.005)
-        step_size_beta = np.float64(0.5)
-         
         sess_MSE = []
         # sess_start = time.time()
         c_pool = 0    
@@ -93,41 +81,42 @@ def stein_is_session(i):
 
 
 if __name__ == '__main__':
+    # Model parameters
+    initial_mu = np.float64(0.)
+    initial_sigma = np.sqrt(np.float64(2.))
+    n_leaders = 100
+    n_followers = 100
+    
+    # Hyperparameters
     num_processes = 4
-
+    n_runs = 3
+    iterations = 800
+    step_size_alpha = np.float64(.005)
+    step_size_beta = np.float64(0.5)
+    
+    params = [[n_runs, initial_mu, initial_sigma, n_leaders, n_followers, iterations, step_size_alpha, step_size_beta, i] for i in range(num_processes)]    
+    
     # Multiprocessing
     start_time = time.time()
     pool = Pool(processes=num_processes)
-    result = pool.map_async(stein_is_session, range(4))
-    print(result.get())
-    print(time.time() - start_time)    
+    result = pool.map_async(stein_is_session, params)
+    MSE = np.array((result.get())).flatten()
+    # Alternative
+    # result = []
+    # for i in range(num_processes):
+    #     result.append(pool.apply_async(stein_is_session, [i]))
     # result = [r.get() for r in result]
+    print(time.time() - start_time)    
+    
     # for gpu_id in range(num_processes):
     #     with tf.device('/gpu:%d' % gpu_id):
     #         with tf.name_scope('tower_%d' % gpu_id):
     #             pool.apply_async(stein_is_session)
-    # for i in range(x.num_processes):
-        # pool.apply_async(x.stein_is_session())
-    
-
-    # processes = []
-    # for _ in range(2):
-    #     p = Process(x.stein_is_session())
-    #     p,daemon = True
-    #     p.start()
-    #     processes.append(p)
-
-    # for p in processes:
-    #     p.join()
-        
-
-        # print('Process', str(i), 'started')
-
 
     # # Save and output results
-    # np.save('a_' + str(step_size_alpha) + '_b_' + str(step_size_beta) + '_sig_' + str(initial_sigma) + '_' +  str(n_runs) + '_AIS_MSE.npy', MSE)
-    # print(x.MSE)
-    # print(np.mean(x.MSE))
+    np.save('a_' + str(step_size_alpha) + '_b_' + str(step_size_beta) + '_sig_' + str(initial_sigma) + '_' +  str(num_processes * n_runs) + '_AIS_MSE.npy', MSE)
+    print(MSE)
+    print(np.mean(MSE))
 
 
 # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
