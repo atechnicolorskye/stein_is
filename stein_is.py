@@ -54,7 +54,7 @@ def logdet(a, name=None):
                       grad=logdet_grad)  # set the gradient
         return res
 
-# GMM
+
 class GMM(object):
     def __init__(self, mu, sigma, weights, dim):
         # Required parameters
@@ -86,30 +86,19 @@ class GMM(object):
         x_t = tf.convert_to_tensor(x)
         return tf.gradients(self.log_px(x_t), [x_t])[0]  # , d_log_px_gc
 
-def initialise_variables(mu, sigma, n_leaders, n_followers, dim):
-    # For replicating Neal
-    # followers = tf.reshape(init_distribution.sample(self.n_trials * self.n_followers, seed=123), [self.n_trials, self.n_followers, self.h_dim]
-    # leaders = tf.reshape(init_distribution.sample(self.n_trials * self.n_leaders, seed=123), [self.n_trials, self.n_leaders, self.h_dim]
-
-    init_distribution = tf.contrib.distributions.MultivariateNormalDiag(mu * tf.ones(dim, tf.float64), sigma * tf.ones(dim, tf.float64))
-    followers = init_distribution.sample(n_followers)
-    q_density = init_distribution.prob(followers)
-    leaders = init_distribution.sample(n_leaders)
-    return followers, q_density, leaders
 
 class SteinIS(object):
-    def __init__(self, gmm_model, dim, n_leaders, n_followers):  # n_trials, step_size=0.01):
+    def __init__(self, gmm_model, dim, n_leaders, n_followers, mu, sigma, step_size_alpha, step_size_beta):  # n_trials, step_size=0.01):
         # Required parameters
         self.gmm_model = gmm_model
         self.dim = dim
         self.n_leaders = n_leaders
         self.n_followers = n_followers
-        # self.n_trials = n_trials
-
+        self.mu = mu
+        self.sigma = sigma
+        
         # Inputs
-        self.A = tf.placeholder(tf.float64, [self.n_leaders, self.dim])
-        self.B = tf.placeholder(tf.float64, [self.n_followers, self.dim])
-        self.log_q_update = tf.placeholder(tf.float64, [self.n_followers])
+        self.B, self.q_density, self.log_q_update, self.A = self.initialise_variables(self.mu, self.sigma, self.n_leaders, self.n_followers, self.dim)
         self.step_size = tf.placeholder(tf.float64, [])
 
         # Register functions for debugging
@@ -122,6 +111,17 @@ class SteinIS(object):
         self.construct_leader_map()
         self.construct_follower_map()
         self.svgd_update()
+
+    def initialise_variables(self, mu, sigma, n_leaders, n_followers, dim):
+        # followers = tf.reshape(init_distribution.sample(self.n_trials * self.n_followers, seed=123), [self.n_trials, self.n_followers, self.h_dim]
+        # leaders = tf.reshape(init_distribution.sample(self.n_trials * self.n_leaders, seed=123), [self.n_trials, self.n_leaders, self.h_dim]
+
+        init_distribution = tf.contrib.distributions.MultivariateNormalDiag(mu * tf.ones(dim, tf.float64), sigma * tf.ones(dim, tf.float64))
+        followers = tf.Variable(init_distribution.sample(n_followers))
+        q_density = init_distribution.prob(followers)
+        log_q_update = tf.Variable(tf.zeros([n_followers], dtype=np.float64))
+        leaders = tf.Variable(init_distribution.sample(n_leaders))
+        return followers, q_density, log_q_update, leaders
 
     def construct_leader_map(self):
         # Calculate ||leader - leader'||^2/h, refer to leader as A as in SteinIS
@@ -196,12 +196,12 @@ class SteinIS(object):
             sum_d_log_pA_T_k_A_A = tf.matmul(tf.transpose(self.k_A_A), d_log_pA)
             self.sum_d_log_pA_T_k_A_A = sum_d_log_pA_T_k_A_A
             phi_A = (sum_d_log_pA_T_k_A_A + self.sum_grad_A_k_A_A) / self.n_leaders
-            self.n_A = self.A + self.step_size * phi_A
+            n_A = self.A.assign(self.A + self.step_size * phi_A)
         with tf.variable_scope('n_B'):
             sum_d_log_pA_T_k_A_B = tf.matmul(tf.transpose(self.k_A_B), d_log_pA)
             self.sum_d_log_pA_T_k_A_B = sum_d_log_pA_T_k_A_B
             phi_B = (sum_d_log_pA_T_k_A_B + self.sum_grad_A_k_A_B) / self.n_leaders
-            self.n_B = self.B + self.step_size * phi_B
+            n_B = self.B.assign(self.B + self.step_size * phi_B)
         # See http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf
         with tf.variable_scope('grad_B_phi_B'):
             grad_B_phi_B = []
@@ -221,8 +221,12 @@ class SteinIS(object):
             I = tf.eye(self.dim, dtype=tf.float64)
             # self.I_grad_B_phi_B = tf.map_fn(lambda x: (I + self.step_size * x), grad_B_phi_B)
             log_abs_det_I_grad_B_phi_B = tf.map_fn(lambda x: logdet(I + self.step_size * x), grad_B_phi_B)
-            self.n_log_q_update = self.log_q_update + log_abs_det_I_grad_B_phi_B
-        return self.n_A, self.n_B, self.n_log_q_update  # , self.I_grad_B_phi_B, self.grad_B_phi_B , self.sum_grad_B_grad_A_k_A_B, self.sum_grad_B_grad_A_k_A_B_gc
+            print(self.log_q_update)
+            n_log_q_update = self.log_q_update.assign(self.log_q_update + log_abs_det_I_grad_B_phi_B)
+        self.updates = tf.group(n_A, n_B, n_log_q_update)
+     
+
+     def train(self):
 
 # Look into using einsum https://www.tensorflow.org/api_docs/python/tf/einsum
 # for i in range(n_followers):
