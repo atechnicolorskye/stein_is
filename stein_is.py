@@ -88,7 +88,7 @@ class GMM(object):
 
 
 class SteinIS(object):
-    def __init__(self, gmm_model, dim, n_leaders, n_followers, mu, sigma, step_size_alpha, step_size_beta):  # n_trials, step_size=0.01):
+    def __init__(self, gmm_model, dim, n_leaders, n_followers, mu, sigma):  # n_trials, step_size=0.01):
         # Required parameters
         self.gmm_model = gmm_model
         self.dim = dim
@@ -221,12 +221,8 @@ class SteinIS(object):
             I = tf.eye(self.dim, dtype=tf.float64)
             # self.I_grad_B_phi_B = tf.map_fn(lambda x: (I + self.step_size * x), grad_B_phi_B)
             log_abs_det_I_grad_B_phi_B = tf.map_fn(lambda x: logdet(I + self.step_size * x), grad_B_phi_B)
-            print(self.log_q_update)
             n_log_q_update = self.log_q_update.assign(self.log_q_update + log_abs_det_I_grad_B_phi_B)
         self.updates = tf.group(n_A, n_B, n_log_q_update)
-     
-
-     def train(self):
 
 # Look into using einsum https://www.tensorflow.org/api_docs/python/tf/einsum
 # for i in range(n_followers):

@@ -54,8 +54,8 @@ def stein_is_session(params):
                 if i % 800 == 0:
                     normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(model.B)) / (model.q_density * tf.exp(-model.log_q_update)))) / n_followers
                     sess_MSE.append((normalisation_constant - 0.000744) ** 2)
-                run_time = time.time() - run_start
-            print('Run', str(_), 'took', str(run_time))
+                # run_time = time.time() - run_start
+            # print('Run', str(_), 'took', str(run_time))
     print('Session complete')
     return sess_MSE
 # print(str(n_runs), 'runs took', str(time.time() - sess_start))
