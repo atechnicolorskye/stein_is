@@ -88,7 +88,7 @@ class GMM(object):
 
 
 class SteinIS(object):
-    def __init__(self, gmm_model, dim, n_leaders, n_followers, mu, sigma):  # n_trials, step_size=0.01):
+    def __init__(self, gmm_model, dim, n_leaders, n_followers, mu, sigma, step_size_alpha, step_size_beta):  # n_trials, step_size=0.01):
         # Required parameters
         self.gmm_model = gmm_model
         self.dim = dim

@@ -69,7 +69,7 @@ if __name__ == '__main__':
     n_followers = 100
 
     # Hyperparameters
-    num_processes = 1
+    num_processes = 4
     n_runs = 3
     iterations = 800
     step_size_alpha = np.float64(.005)
