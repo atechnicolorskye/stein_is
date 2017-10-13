@@ -1,6 +1,6 @@
 from __future__ import print_function
 from multiprocessing import Pool, Process, Queue, Event
-from stein_is import GMM, SteinIS
+from stein_is_o import GMM, SteinIS
 
 import numpy as np
 import tensorflow as tf
@@ -33,17 +33,17 @@ def stein_is_session(params):
         mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights = np.array([1. / 3, 2. / 3]); dim = 6
         gmm = GMM(mu, sigma, weights, dim)
         # Initialise model
-        model = SteinIS(gmm, dim, n_leaders, n_followers, initial_mu, initial_sigma, step_size_alpha, step_size_beta)
+        model = SteinIS(gmm, dim, n_leaders, n_followers, initial_mu, initial_sigma)
         # writer = tf.summary.FileWriter('Graphs', graph=tf.get_default_graph())
 
-        for i in range(n_runs):
+        for _ in range(n_runs):
             sess.run(tf.global_variables_initializer())
             run_start = time.time()
             # B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers, dim))
-            for j in range(iterations):
-                # step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
+            for i in range(1, iterations + 1):
+                step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
                 # pdb.set_trace()
-                _ = sess.run([model.updates])
+                _ = sess.run([model.updates], feed_dict={model.step_size: step_size})
                 # pdb.set_trace()
                 # A_ = A
                 # B_ = B
@@ -51,7 +51,7 @@ def stein_is_session(params):
                 # k_A_A_ = k_A_A
                 # k_A_B_ = k_A_B
                 # d_log_pA_ = d_log_pA
-                if j % 800 == 0:
+                if i % 800 == 0:
                     normalisation_constant = np.sum(sess.run(tf.exp(model.gmm_model.log_px(model.B)) / (model.q_density * tf.exp(-model.log_q_update)))) / n_followers
                     sess_MSE.append((normalisation_constant - 0.000744) ** 2)
                 # run_time = time.time() - run_start
@@ -69,8 +69,8 @@ if __name__ == '__main__':
     n_followers = 100
 
     # Hyperparameters
-    num_processes = 4
-    n_runs = 3
+    num_processes = 25
+    n_runs = 20
     iterations = 800
     step_size_alpha = np.float64(.005)
     step_size_beta = np.float64(0.5)

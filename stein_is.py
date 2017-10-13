@@ -88,7 +88,7 @@ class GMM(object):
 
 
 class SteinIS(object):
-    def __init__(self, gmm_model, dim, n_leaders, n_followers, mu, sigma, step_size_alpha, step_size_beta):  # n_trials, step_size=0.01):
+    def __init__(self, gmm_model, dim, n_leaders, n_followers, mu, sigma):  # n_trials, step_size=0.01):
         # Required parameters
         self.gmm_model = gmm_model
         self.dim = dim
@@ -96,11 +96,9 @@ class SteinIS(object):
         self.n_followers = n_followers
         self.mu = mu
         self.sigma = sigma
-        self.step_size_alpha = tf.to_double(step_size_alpha)
-        self.step_size_beta = tf.to_double(step_size_beta)
-
+        
         # Inputs
-        self.B, self.q_density, self.log_q_update, self.A, self.iter = self.initialise_variables(self.mu, self.sigma, self.n_leaders, self.n_followers, self.dim)
+        self.B, self.q_density, self.log_q_update, self.A = self.initialise_variables(self.mu, self.sigma, self.n_leaders, self.n_followers, self.dim)
         self.step_size = tf.placeholder(tf.float64, [])
 
         # Register functions for debugging
@@ -123,8 +121,7 @@ class SteinIS(object):
         q_density = init_distribution.prob(followers)
         log_q_update = tf.Variable(tf.zeros([n_followers], dtype=np.float64))
         leaders = tf.Variable(init_distribution.sample(n_leaders))
-        iteration = tf.Variable(tf.to_double(1.))
-        return followers, q_density, log_q_update, leaders, iteration
+        return followers, q_density, log_q_update, leaders
 
     def construct_leader_map(self):
         # Calculate ||leader - leader'||^2/h, refer to leader as A as in SteinIS
@@ -191,8 +188,6 @@ class SteinIS(object):
         return self.k_A_B, self.sum_grad_A_k_A_B  # , self.sum_grad_A_k_A_Bp, self.sum_grad_A_k_A_Bn, self.h
 
     def svgd_update(self):
-        self.step_size = self.step_size_alpha * (1. + self.iter) ** (-self.step_size_beta)
-        n_iter = self.iter.assign(self.iter + 1.)
         with tf.variable_scope('d_log_pA'):
             self.log_pA = self.gmm_model.log_px(self.A)
             d_log_pA = self.gmm_model.d_log_px(self.A)
@@ -227,7 +222,7 @@ class SteinIS(object):
             # self.I_grad_B_phi_B = tf.map_fn(lambda x: (I + self.step_size * x), grad_B_phi_B)
             log_abs_det_I_grad_B_phi_B = tf.map_fn(lambda x: logdet(I + self.step_size * x), grad_B_phi_B)
             n_log_q_update = self.log_q_update.assign(self.log_q_update + log_abs_det_I_grad_B_phi_B)
-        self.updates = tf.group(n_A, n_B, n_log_q_update, n_iter)
+        self.updates = tf.group(n_A, n_B, n_log_q_update)
 
 # Look into using einsum https://www.tensorflow.org/api_docs/python/tf/einsum
 # for i in range(n_followers):
