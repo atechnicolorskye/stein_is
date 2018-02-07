@@ -79,8 +79,8 @@ sorting=ynt
 
 \medskip
 
-\section{Algorithm}
-According to section 5 of the paper, the authors use the RBF kernel $k(x, x') = \exp(-||x -x'||^2/h)$ with $h$ being the kernel bandwidth. $h$ is defined as $\textrm{med}^2 / (2 \log (|A| +1))$ where $\textrm{med}$ is the median of the pairwise distances between the leader particles and $|A|$ is the number of leader particles. (Note: The authors took the median of the squared pairwise distances between the leader particles.)
+\section{RBF Kernel}
+According to section 5 of the paper, the authors use the RBF kernel defined as $k(x, x') = \exp(-||x -x'||^2/h)$ with $h$ being the kernel bandwidth. $h$ is defined as $\textrm{med}^2 / (2 \log (|A| +1))$ where $\textrm{med}$ is the median of the pairwise distances between the leader particles and $|A|$ is the number of leader particles. (Note: The authors took the median of the squared pairwise distances between the leader particles.)
 
 \subsection{Construct mapping for leaders}
 We first construct the map using the leader particles $x^{\ell}_A$ with $\ell$ representing the $\ell$th iteration.  The pairwise distances $||x - x'||$ are already computed when defining the kernel.\\
@@ -119,12 +119,12 @@ We do the same for the followers:
 Update $\phi_A$ and $\phi_B$ to both leader and follower particle by adding $\epsilon * \phi$ to them.
 
 \subsection{Calculate density values of followers}
-We now compute $\nabla _{x_{B_i}} \phi_B(x_{B_i}) = \frac{1}{A} \sum_{A} [\nabla_{x_A} \log p(x_{B_i})^T \nabla_{x_{B_i}}k(x_A, x_{B_i}) + \nabla_{x_As} \nabla_{x_{B_i}} k(x_A, x_{B_i})]$. Like before but with a slight tweak, $\nabla_{x_{B_i}} k(x_A , x_{B_i})$ is:
+We now compute $\nabla _{x_{B_i}} \phi_B(x_{B_i}) = \frac{1}{A} \sum_{A} [\nabla_{x_A} \log p(x_{B_i})^T \nabla_{x_{B_i}}k(x_A, x_{B_i}) + \nabla_{x_A} \nabla_{x_{B_i}} k(x_A, x_{B_i})]$. Like before but with a slight tweak, $\nabla_{x_{B_i}} k(x_A , x_{B_i})$ is:
 \begin{align}
 \nabla_{x_{B_i}} \exp (- (x_A^T x_A - 2 x_A^T x_{B_i} + x_{B_i}^T x_{B_i}) / h)
 &= \frac{2(x_A -  x_{B_i})}{h} \exp (- ||x_A - x_{B_i}||^2 / h)
 \end{align}  
-Shifting the focus to the $\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i})$ term, we begin with the above result
+Shifting our focus to the $\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i})$ term, we begin with the above result\footnote{http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf}We
 \begin{align}
 &\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i}) \\ 
 &= \nabla_{x_A} \frac{2(x_A -  x_{B_i})}{h} \exp (- ||x_A - x_{B_i}||^2 / h) \\
@@ -145,4 +145,120 @@ Hence, we have
 \subsection{Update density values of followers}
 With $\nabla_{x_{B_i}} \phi_B(x_{B_i})$ in hand, we update the density values using the last equation of the Stein IS algorithm by using Tensorflow to compute the absolute determinant of $I + \epsilon \nabla_{x_{B_i}} \phi_B(x_{B_i})$ and multiplying the current density values by the inverse of the result. 
 
+\newpage
+
+\section{Fisher Kernel}
+Instead of using the RBF kernel whose weaknesses are detailed in Zhuo et. al\footnote{https://arxiv.org/pdf/1711.04425.pdf}, we propose the use of the Fisher kernel which requires less parameter tuning (and could possibly sidestep the issues highlighted in Zhuo et. al) and might have better properties. The Fisher kernel is formally defined as $k(x, x') = \nabla_{\theta} \log(p(x|\theta) I^{-1} \nabla_{\theta} \log(p(x'|\theta)^T$ where $I$ is the Fisher matrix. In practice, the Fisher matrix is not computed to reduce computational cost, leading to the requirement that resulting kernel be normalised\footnote{http://qwone.com/~jason/writing/normalizeKernel.pdf} and made PSD as SVGD exploits the RHKS property for closed-form updates. We follow the format defined by the previous section.
+
+\subsection{Construct mapping for leaders}
+Like before, we can assume that $\nabla_x \log p(x_A^\ell|\theta)$ is obtained through automatic differentiation. However the issue this time is TensorFlow being unable to differentiate through a mixture model which requires analytical expressions for each parameter for the Gaussian Mixture Model\footnote{Checked against Matrix Cookbook} and $\nabla_x \nabla_{\theta} \log p(x_A^\ell|\theta)$ for $\nabla k(x, x')$.\\
+
+\noindent
+\textbf{Differentials of GMM loglikelihood}\\
+Take $p(x|\theta) = \sum_m w_i p(x|\theta_i)$ where $\theta = \{w, \mu, \sigma^2\}$ with $m$ Gaussians.\\
+Correspondingly, $\log p(x|\theta) = \log \sum_m w_i p(x|\theta_i)$.\\
+Differentiating w.r.t. $w_i$, 
+\begin{align}
+\nabla_{w_i} \log p(x|\theta)
+&= \frac{1}{\sum_m w_i p(x|\theta_i)} \nabla_{w_i} \sum_m w_i p(x|\theta_i)\\
+&= \frac{w_i p(x|\theta_i)}{\sum_m w_i p(x|\theta_i)} \frac{1}{w_i}\\
+\end{align}
+\noindent
+Differentiating w.r.t. $\mu_i$, 
+\begin{align}
+\nabla_{\mu_i} \log p(x|\theta)
+&= \frac{1}{\sum_m w_i p(x|\theta_i)} \nabla_{\mu_i} \sum_m w_i p(x|\theta_i)\\
+&= \frac{w_i p(x|\theta_i)}{\sum_m w_i p(x|\theta_i)} \left(\frac{x - \mu_i}{\sigma_i^2}\right)\\
+\end{align}
+\noindent
+Differentiating w.r.t. $\sigma_i^2$\ \footnote{http://www.vlfeat.org/api/fisher-derivation.html}\footnote{https://hal.inria.fr/hal-00830491/PDF/journal.pdf}, 
+\begin{align}
+\nabla_{\sigma_i^2} \log p(x|\theta)
+&= \frac{1}{\sum_m w_i p(x|\theta_i)} \nabla_{\sigma_i^2} \sum_m w_i p(x|\theta_i)\\
+&= \frac{w_i p(x|\theta_i)}{\sum_m w_i p(x|\theta_i)}\ \underbrace{\frac{1}{2} \left(-\frac{1}{\sigma_i^2} + \left(\frac{x - \mu_i}{\sigma_i^2}\right)^2 \right)}_{\xi}
+\end{align}
+\noindent
+%Let $z = \sum_m w_i p(x|\theta_i)$.\\
+%Differentiating $\nabla_{w_i} \log z$ w.r.t $x$,
+%\begin{align}
+%\nabla_{x} \frac{1}{z} p(x|\theta_i)
+%&= \nabla_{x} z^{-1} p(x|\theta_i) + z^{-1} \nabla_x p(x|\theta_i)\\
+%&= -\frac{1}{z^2} \nabla_x z\ p(x|\theta_i) + \frac{1}{z} -\left(\frac{x - \mu_i}{\sigma_i^2}\right) p(x|\theta_i)\\
+%&= \frac{1}{z} \underbrace{\frac{1}{z} \left[\sum_m \left(\frac{x - \mu_i}{\sigma_i^2}\right) w_i p(x|\theta_i)\right]}_{\zeta} p(x|\theta_i) - \frac{1}{z} \left(\frac{x - \mu_i}{\sigma_i^2}\right) p(x|\theta_i)\\
+%&= \frac{1}{z}  \left[\zeta - \left(\frac{x - \mu_i}{\sigma_i^2}\right)\right] p(x|\theta_i)\\
+%\end{align}
+%\noindent
+%Differentiating $\nabla_{\mu_i} \log z$ w.r.t $x$,
+%\begin{align}
+%&\nabla_{x} \frac{1}{z} w_i p(x|\theta_i) \left(\frac{x - \mu_i}{\sigma_i^2}\right)\\
+%&= \nabla_{x} z^{-1} w_i p(x|\theta_i) \left(\frac{x - \mu_i}{\sigma_i^2}\right) + \frac{1}{z} w_i \left[\nabla_x  p(x|\theta_i) \left(\frac{x - \mu_i}{\sigma_i^2}\right) + p(x|\theta_i) \nabla_x \left(\frac{x - \mu_i}{\sigma_i^2}\right)\right]\\
+%&= \frac{1}{z} \zeta^T \ w_i p(x|\theta_i) \left(\frac{x - \mu_i}{\sigma_i^2}\right) + \frac{1}{z} \left[\frac{1}{\sigma_i^2} - \left(\frac{x - \mu_i}{\sigma_i^2}\right)^T \left(\frac{x - \mu_i}{\sigma_i^2}\right)\right] w_i p(x|\theta_i)\\
+%&= \frac{1}{z} \left\{\zeta^T \left(\frac{x - \mu_i}{\sigma_i^2}\right) + \left[\frac{1}{\sigma_i^2} - \left(\frac{x - \mu_i}{\sigma_i^2}\right)^T  \left(\frac{x - \mu_i}{\sigma_i^2}\right)\right]\right\} w_i p(x|\theta_i)\\
+%\end{align}
+%\noindent
+%Differentiating $\nabla_{\sigma_i^2} \log z$ w.r.t $x$,
+%\begin{align}
+%&\nabla_{x} \frac{1}{z} w_i p(x|\theta_i) \xi\\
+%&= \nabla_{x} z^{-1} w_i p(x|\theta_i) \xi + \frac{1}{z} w_i \left[\nabla_x  p(x|\theta_i) \xi + p(x|\theta_i) \frac{1}{2} \nabla_x \frac{(x - \mu_i)^2}{\sigma_i^4}\right]\\
+%&= \frac{1}{z} \zeta \ w_i p(x|\theta_i) \xi + \frac{1}{z} \left[-w_i p(x|\theta_i) \xi \left(\frac{x - \mu_i}{\sigma_i^2}\right) + w_i p(x|\theta_i) \frac{1}{\sigma_i^2} \left(\frac{x - \mu_i}{\sigma_i^2}\right)\right]\\
+%&= \frac{1}{z} \left\{\zeta \xi + \left[\left(\frac{1}{\sigma_i^2} - \xi \right) \left(\frac{x - \mu_i}{\sigma_i^2}\right)\right]\right\} w_i p(x|\theta_i)\\
+%\end{align}
+\textbf{Second Order Differentials of GMM loglikelihood}\\
+To ensure that the second order differentials are right, we start by differentiating an entry in the Fisher kernel and then generalise from the obtained results.\\ \\
+Differentiating $k_{w_i}(x_1, x_2)$ w.r.t. $x$, 
+\begin{align}
+\nabla_{x_1} k_{w_i}(x_1, x_2)
+&=\nabla_{x_1} \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)}\\
+&= \frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{(\sum w_i p(x_1|\theta_i))^2} \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_2|\theta_i)}\\ 
+&\ \ \ \ - \frac{w_i^2 p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)} \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) p(x_1|\theta_i)
+\end{align}
+We then separate the contribution of $\nabla_{w_i} \log \sum w_i p(x_2|\theta_i)$ from the above to get $\nabla_{x_1} \nabla_{w_i} \log \sum w_i p(x_1|\theta_i)^T$
+\begin{align}
+&\nabla_{x_1} \nabla_{w_i} \log \sum w_i p(x_1|\theta_i)^T \nonumber \\
+&=\frac{w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} \left[\frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} - \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\right]
+\end{align}
+Its transpose is
+\begin{align}
+&\nabla_{x_1} \nabla_{w_i} \log \sum w_i p(x_1|\theta_i) \nonumber \\
+&=\frac{w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} \left[\frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} - \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\right]^T
+\end{align}
+
+Differentiating $k_{\mu_i}(x_1, x_2)$ w.r.t. $x$, 
+\begin{align}
+\nabla_{x_1} k_{\mu_i}(x_1, x_2)
+&=\nabla_{x_1} \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)} \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)^T \left(\frac{x_2 - \mu_i}{\sigma_i^2}\right)\\
+&= \frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{(\sum w_i p(x_1|\theta_i))^2} \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_2|\theta_i)} \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)^T \left(\frac{x_2 - \mu_i}{\sigma_i^2}\right)\\
+&\ \ \ \ - \frac{w_i^2 p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)} \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) p(x_1|\theta_i) \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)^T \left(\frac{x_2 - \mu_i}{\sigma_i^2}\right)\\
+&\ \ \ \ + \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)} \frac{1}{\sigma_i^2} \left(\frac{x_2 - \mu_i}{\sigma_i^2}\right)
+\end{align}
+We then separate the contribution of $\nabla_{\mu_i} \log \sum w_i p(x_2|\theta_i)$ from the above to get $\nabla_{x_1} \nabla_{\mu_i} \log \sum w_i p(x_1|\theta_i)^T$
+\begin{align}
+&\nabla_{x_1} \nabla_{\mu_i} \log \sum w_i p(x_1|\theta_i)^T \nonumber \\
+&=\frac{w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} \left[\left(\frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} - \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\right)\left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)^T + \frac{1}{\sigma_i^2} \right]
+\end{align}
+where $\sigma_i^2$ is a $d \times d$ diagonal matrix instead of a $d \times 1$ vector.
+Its transpose is
+\begin{align}
+&\nabla_{x_1} \nabla_{\mu_i} \log \sum w_i p(x_1|\theta_i) \nonumber \\
+&=\frac{w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} \left[\left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) \left(\frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} - \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\right)^T + \frac{1}{\sigma_i^2} \right]
+\end{align}
+Differentiating $k_{\sigma_i^2}(x_1, x_2)$ w.r.t. $x$, 
+\begin{align}
+\nabla_{x_1} k_{\sigma_i^2}(x_1, x_2)
+&=\nabla_{x_1} \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)} \xi_1^T \xi_2\\
+&= \frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{(\sum w_i p(x_1|\theta_i))^2} \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_2|\theta_i)} \xi_1^T \xi_2\\
+&\ \ \ \ - \frac{w_i^2 p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)} \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) p(x_1|\theta_i) \xi_1^T \xi_2\\
+&\ \ \ \ + \frac{w_i^2 p(x_1|\theta_i) p(x_2|\theta_i)}{\sum w_i p(x_1|\theta_i) \sum w_i p(x_2|\theta_i)} \left(\textrm{diag}\left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\frac{1}{\sigma_i^2}\right)^T \xi_2
+\end{align}
+We then separate the contribution of $\nabla_{\sigma_i^2} \log \sum w_i p(x_2|\theta_i)$ from the above to get $\nabla_{x_1} \nabla_{\sigma_i^2} \log \sum w_i p(x_1|\theta_i)^T$
+\begin{align}
+&\nabla_{x_1} \nabla_{\sigma_i^2} \log \sum w_i p(x_1|\theta_i)^T \nonumber \\
+&=\frac{w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} \left[\left(\frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} - \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\right) \xi_1^T + \frac{1}{\sigma_i^2}\textrm{diag}\left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) \right]
+\end{align}
+where $\sigma_i^2$ is a $d \times d$ diagonal matrix instead of a $d \times 1$ vector.
+Its transpose is
+\begin{align}
+&\nabla_{x_1} \nabla_{\sigma_i^2} \log \sum w_i p(x_1|\theta_i) \nonumber \\
+&=\frac{w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} \left[\xi_1 \left(\frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} - \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\right)^T + \textrm{diag}\left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\frac{1}{\sigma_i^2} \right]
+\end{align}
 \end{document}
