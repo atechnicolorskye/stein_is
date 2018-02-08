@@ -60,8 +60,9 @@ sorting=ynt
 \usepackage{dsfont}
 \setcounter{tocdepth}{3}
 \usepackage{graphicx}
+\usepackage{hyperref}
 
-\usepackage{url}
+%\usepackage{url}
 \newcommand{\keywords}[1]{\par\addvspace\baselineskip
 \noindent\keywordname\enspace\ignorespaces#1}
 
@@ -124,7 +125,7 @@ We now compute $\nabla _{x_{B_i}} \phi_B(x_{B_i}) = \frac{1}{A} \sum_{A} [\nabla
 \nabla_{x_{B_i}} \exp (- (x_A^T x_A - 2 x_A^T x_{B_i} + x_{B_i}^T x_{B_i}) / h)
 &= \frac{2(x_A -  x_{B_i})}{h} \exp (- ||x_A - x_{B_i}||^2 / h)
 \end{align}  
-Shifting our focus to the $\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i})$ term, we begin with the above result\footnote{http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf}We
+Shifting our focus to the $\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i})$ term, we begin with the above result\footnote{\url{http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf}}We
 \begin{align}
 &\nabla_{x_A}\nabla_{x_{B_i}} k(x_A, x_{B_i}) \\ 
 &= \nabla_{x_A} \frac{2(x_A -  x_{B_i})}{h} \exp (- ||x_A - x_{B_i}||^2 / h) \\
@@ -148,7 +149,7 @@ With $\nabla_{x_{B_i}} \phi_B(x_{B_i})$ in hand, we update the density values us
 \newpage
 
 \section{Fisher Kernel}
-Instead of using the RBF kernel whose weaknesses are detailed in Zhuo et. al\footnote{https://arxiv.org/pdf/1711.04425.pdf}, we propose the use of the Fisher kernel which requires less parameter tuning (and could possibly sidestep the issues highlighted in Zhuo et. al) and might have better properties. The Fisher kernel is formally defined as $k(x, x') = \nabla_{\theta} \log(p(x|\theta) I^{-1} \nabla_{\theta} \log(p(x'|\theta)^T$ where $I$ is the Fisher matrix. In practice, the Fisher matrix is not computed to reduce computational cost, leading to the requirement that resulting kernel be normalised\footnote{http://qwone.com/~jason/writing/normalizeKernel.pdf} and made PSD as SVGD exploits the RHKS property for closed-form updates. We follow the format defined by the previous section.
+Instead of using the RBF kernel whose weaknesses are detailed in Zhuo et. al\footnote{\url{https://arxiv.org/pdf/1711.04425.pdf}}, we propose the use of the Fisher kernel which requires less parameter tuning (and could possibly sidestep the issues highlighted in Zhuo et. al) and might have better properties. The Fisher kernel is formally defined as $k(x, x') = \nabla_{\theta} \log(p(x|\theta) I^{-1} \nabla_{\theta} \log(p(x'|\theta)^T$ where $I$ is the Fisher matrix. In practice, the Fisher matrix is not computed to reduce computational cost, leading to the requirement that resulting kernel be normalised\footnote{\url{http://qwone.com/~jason/writing/normalizeKernel.pdf}} and made PSD as SVGD exploits the RHKS property for closed-form updates. We follow the format defined by the previous section.
 
 \subsection{Construct mapping for leaders}
 Like before, we can assume that $\nabla_x \log p(x_A^\ell|\theta)$ is obtained through automatic differentiation. However the issue this time is TensorFlow being unable to differentiate through a mixture model which requires analytical expressions for each parameter for the Gaussian Mixture Model\footnote{Checked against Matrix Cookbook} and $\nabla_x \nabla_{\theta} \log p(x_A^\ell|\theta)$ for $\nabla k(x, x')$.\\
@@ -171,7 +172,7 @@ Differentiating w.r.t. $\mu_i$,
 &= \frac{w_i p(x|\theta_i)}{\sum_m w_i p(x|\theta_i)} \left(\frac{x - \mu_i}{\sigma_i^2}\right)\\
 \end{align}
 \noindent
-Differentiating w.r.t. $\sigma_i^2$\ \footnote{http://www.vlfeat.org/api/fisher-derivation.html}\footnote{https://hal.inria.fr/hal-00830491/PDF/journal.pdf}, 
+Differentiating w.r.t. $\sigma_i^2$\ \footnote{\url{http://www.vlfeat.org/api/fisher-derivation.html}}\footnote{\url{https://hal.inria.fr/hal-00830491/PDF/journal.pdf}}, 
 \begin{align}
 \nabla_{\sigma_i^2} \log p(x|\theta)
 &= \frac{1}{\sum_m w_i p(x|\theta_i)} \nabla_{\sigma_i^2} \sum_m w_i p(x|\theta_i)\\
