@@ -59,8 +59,6 @@ class GMM(object):
     # Gaussian Mixture Model
     def __init__(self, mu, sigma, weights, dim):
         # Required parameters
-        self.mu = []
-        self.sigma = []
         self.weights = weights
         self.dim = dim
 
@@ -69,8 +67,6 @@ class GMM(object):
             mu_, sigma_ = mu[i] * np.ones(dim), sigma[i] * np.ones(dim)
             # print(mu_, sigma_)
             mvnd_i = tf.contrib.distributions.MultivariateNormalDiag(mu_, sigma_)
-            self.mu.append(mu_)
-            self.sigma.append(sigma_)
             self.distributions.append(mvnd_i)
         self.mix = tf.contrib.distributions.Mixture(tf.contrib.distributions.Categorical(probs=self.weights), self.distributions)
 
@@ -81,6 +77,10 @@ class GMM(object):
         return tf.reshape(tf.transpose(vec, perm=[1, 0, 2]), [vec_shape[1], vec_shape[0] * vec_shape[2]])
 
     # Differentials
+    def log_px(self, x):
+        x_t = tf.convert_to_tensor(x)
+        return self.mix.log_prob(x_t)
+
     def dx_log_px(self, x):
         # dx_log_px = 1 / exp(log(sum(exp(log(w_i) + log(p_i(x))))))
         #            * sum(exp(log(w_i) + log(p_i(x)) + log(-(x - mu)/sigma^2)))
@@ -94,42 +94,42 @@ class GMM(object):
         # x_t = x
         n_points = x.shape[0]
         x_t = tf.convert_to_tensor(x)
-        px = tf.reshape(self.mix.prob(x_t), (-1, 1))
-        dw_log_px_, dmu_log_px_, dsigma2_log_px_, w_px_, exponent_, xi_ = [], [], [], [], [], []
+        # Have to use log_px, log_px_id for stability
+        log_px = tf.reshape(self.mix.log_prob(x_t), (-1, 1))
+        dw_log_px_, dmu_log_px_, dsigma2_log_px_, w_px_i_px, exponent_, xi_ = [], [], [], [], [], []
         for i in range(self.weights.shape[0]):
-            px_i = tf.reshape(self.distributions[i].prob(x_t), [-1, 1])
-            dw_log_px_.append(px_i)
-            w_px_i = self.weights[i] * px_i
-            w_px_.append(w_px_i)
+            log_px_i = tf.reshape(self.distributions[i].log_prob(x_t), [-1, 1])
+            dw_log_px_.append(tf.exp(log_px_i - log_px))
+            w_px_i_px_ = self.weights[i] * dw_log_px_[i]
+            w_px_i_px.append(w_px_i_px_)
             exponent_i = tf.divide((x_t - self.distributions[i].mean()), self.distributions[i].variance())
             exponent_.append(exponent_i)
-            dmu_log_px_.append(w_px_i * exponent_i)
+            dmu_log_px_.append(w_px_i_px_ * exponent_i)
             xi_i = 0.5 * (tf.multiply(exponent_i, exponent_i) - tf.divide(1, self.distributions[i].variance()))
             xi_.append(xi_i)
-            dsigma2_log_px_.append(w_px_i * xi_i)
-        dw_log_px_, dmu_log_px_, dsigma2_log_px_ =  tf.stack(dw_log_px_) / px, tf.stack(dmu_log_px_) / px, tf.stack(dsigma2_log_px_) / px
+            dsigma2_log_px_.append(w_px_i_px_ * xi_i)
+        dw_log_px_, dmu_log_px_, dsigma2_log_px_ =  tf.stack(dw_log_px_), tf.stack(dmu_log_px_), tf.stack(dsigma2_log_px_)
         dw_log_px, dmu_log_px, dsigma2_log_px = self.reshape_fish_comp(dw_log_px_), self.reshape_fish_comp(dmu_log_px_), self.reshape_fish_comp(dsigma2_log_px_)
         dtheta_log_px_ = tf.concat([dw_log_px, dmu_log_px, dsigma2_log_px], 1)
         dtheta_log_px_norm = tf.norm(dtheta_log_px_, axis=1, keep_dims=True)
         dtheta_log_px = dtheta_log_px_ / dtheta_log_px_norm
-        return dtheta_log_px, [dw_log_px_ / dtheta_log_px_norm, dmu_log_px_ / dtheta_log_px_norm, dsigma2_log_px_ / dtheta_log_px_norm], dmu_log_px_, w_px_, exponent_, xi_, px, dtheta_log_px_norm
+        return dtheta_log_px, [dw_log_px_ / dtheta_log_px_norm, dmu_log_px_ / dtheta_log_px_norm, dsigma2_log_px_ / dtheta_log_px_norm], dmu_log_px_, w_px_i_px / dtheta_log_px_norm, exponent_, xi_
 
-    def dx_dtheta_log_px(self, dmu_log_px_, w_px_, exponent_, xi_, px, dtheta_log_px_norm):
+    def dx_dtheta_log_px(self, dmu_log_px_, w_px_i_px_norm, exponent_, xi_):
         # Returns a n * d * # of components matrix
         dx_dw_log_px_, dx_dmu_log_px_, dx_dsigma2_log_px_ = [], [], []
         zeta = tf.reduce_sum(dmu_log_px_, [0])
         for i in range(self.weights.shape[0]):
-            zeta_m_exponent_T = tf.expand_dims(zeta - exponent_[i], 1)
-            w_px_i_d_px_norm = w_px_[i] / (px * dtheta_log_px_norm)
-            dx_dw_log_px_.append(zeta_m_exponent_T * w_px_i_d_px_norm)
+            zeta_m_exponent = tf.expand_dims(zeta - exponent_[i], 1)
+            w_px_i_px_norm_i = tf.expand_dims(w_px_i_px_norm[i], -1)
+            dx_dw_log_px_.append(zeta_m_exponent * w_px_i_px_norm_i)
             diag_precision = tf.diag(1. / self.distributions[i].variance())
             exponent_i_tensor = tf.expand_dims(exponent_[i], -1)
-            w_px_i_d_px_norm = tf.expand_dims(w_px_[i] / (px * dtheta_log_px_norm), -1)
-            dx_dmu_log_px_.append((tf.matmul(exponent_i_tensor, zeta_m_exponent_T) + diag_precision) * w_px_i_d_px_norm)
+            dx_dmu_log_px_.append((tf.matmul(exponent_i_tensor, zeta_m_exponent) + diag_precision) * w_px_i_px_norm_i)
             xi_i_tensor = tf.expand_dims(xi_[i], -1)
             exponent_i_diag = tf.matrix_diag(exponent_[i])
             diag_precision = tf.expand_dims(diag_precision, 0)
-            dx_dsigma2_log_px_.append((tf.matmul(xi_i_tensor, zeta_m_exponent_T) + exponent_i_diag * diag_precision)* w_px_i_d_px_norm)
+            dx_dsigma2_log_px_.append((tf.matmul(xi_i_tensor, zeta_m_exponent) + exponent_i_diag * diag_precision) * w_px_i_px_norm_i)
         dx_dw_log_px, dx_dmu_log_px, dx_dsigma2_log_px = tf.stack(dx_dw_log_px_), tf.stack(dx_dmu_log_px_), tf.stack(dx_dsigma2_log_px_)
         return [dx_dw_log_px, dx_dmu_log_px, dx_dsigma2_log_px]
 
@@ -157,8 +157,8 @@ class SteinIS(object):
 
         # Register functions
         self.construct_leader_map()
-        # self.construct_follower_map()
-        # self.svgd_update()
+        self.construct_follower_map()
+        self.svgd_update()
 
     # Utiliy Functions
     def k_dx_x(self, d_x, x):
@@ -177,7 +177,7 @@ class SteinIS(object):
         # followers = tf.reshape(init_distribution.sample(self.n_trials * self.n_followers, seed=123), [self.n_trials, self.n_followers, self.h_dim]
         # leaders = tf.reshape(init_distribution.sample(self.n_trials * self.n_leaders, seed=123), [self.n_trials, self.n_leaders, self.h_dim]
 
-        init_distribution = tf.contrib.distributions.MultivariateNormalDiag(mu * tf.ones(dim, tf.float64), sigma * tf.ones(dim, tf.float64))
+        init_distribution = tf.contrib.distributions.MultivariateNormalDiag(mu * tf.zeros(dim, tf.float64), sigma * tf.ones(dim, tf.float64))
         # Not absolute
         followers = tf.Variable(init_distribution.sample(n_followers))
         leaders = tf.Variable(init_distribution.sample(n_leaders))
@@ -203,8 +203,8 @@ class SteinIS(object):
                 self.h = h
                 self.k_A_A = tf.exp(-A_A_Distance_Squared / h)
             elif self.kernel == 'fisher':
-                self.A_dtheta_log_px, [self.A_dw_log_px, self.A_dmu_log_px, self.A_dsigma2_log_px], A_dmu_log_px_, w_px_, exponent_, xi_, px, A_dtheta_log_px_norm = self.m_model.dtheta_log_px(self.A)
-                [self.A_dx_dw_log_px, self.A_dx_dmu_log_px, self.A_dx_dsigma2_log_px] = self.m_model.dx_dtheta_log_px(self.A_dmu_log_px_, w_px_, exponent_, xi_, px, A_dtheta_log_px_norm)
+                self.A_dtheta_log_px, [self.A_dw_log_px, self.A_dmu_log_px, self.A_dsigma2_log_px], A_dmu_log_px_, w_px_i_px_norm, exponent_, xi_ = self.m_model.dtheta_log_px(self.A)
+                [self.A_dx_dw_log_px, self.A_dx_dmu_log_px, self.A_dx_dsigma2_log_px] = self.m_model.dx_dtheta_log_px(A_dmu_log_px_, w_px_i_px_norm, exponent_, xi_)
                 self.k_A_A = tf.matmul(self.A_dtheta_log_px, tf.transpose(self.A_dtheta_log_px))
         # Can't use vanilla tf.gradients as it sums dy/dx wrt to dx, want sum dy/dx wrt to dy, tf.map_fn is not available
         # tf.gradients also do not provide accurate gradients in this case
@@ -225,9 +225,10 @@ class SteinIS(object):
                 A_B_Distance_Squared = self.A_Squared - x2_A_B_T + tf.transpose(B_Squared)
                 self.k_A_B = tf.exp(-A_B_Distance_Squared / self.h)
             elif self.kernel == 'fisher':
-                self.B_dtheta_log_px, [dw_log_px, dmu_log_px, dsigma2_log_px], dmu_log_px_, w_px_, exponent_, xi_, px, B_dtheta_log_px_norm = self.m_model.dtheta_log_px(self.B)
-                [self.B_dx_dw_log_px, self.B_dx_dmu_log_px, self.B_dx_dsigma2_log_px] = self.m_model.dx_dtheta_log_px(dmu_log_px_, w_px_, exponent_, xi_, px, B_dtheta_log_px_norm)
-                self.k_A_B = tf.matmul(self.B_dtheta_log_px, tf.transpose(self.A_dtheta_log_px))
+                self.B_dtheta_log_px, [dw_log_px, dmu_log_px, dsigma2_log_px], dmu_log_px_, w_px_, exponent_, xi_ = self.m_model.dtheta_log_px(self.B)
+                [self.B_dx_dw_log_px, self.B_dx_dmu_log_px, self.B_dx_dsigma2_log_px] = self.m_model.dx_dtheta_log_px(dmu_log_px_, w_px_, exponent_, xi_)
+                # Normalise properly!
+                self.k_A_B = tf.matmul(self.A_dtheta_log_px, tf.transpose(self.B_dtheta_log_px))
         with tf.variable_scope('sum_d_A_k_A_B'):
             if self.kernel == 'se':
                 self.sum_d_A_k_A_B = tf.stack([tf.squeeze(tf.matmul(tf.reshape(self.k_A_B[:, i], (1, -1)), (-2 * (self.A - self.B[i]) / self.h))) for i in range(self.n_followers)])
@@ -237,21 +238,19 @@ class SteinIS(object):
                 # return self.k_A_B, self.sum_d_A_k_A_B, self.B_dtheta_log_px, self.B_dx_dw_log_px, self.B_dx_dmu_log_px, self.B_dx_dsigma2_log_px
 
     def svgd_update(self):
-        with tf.variable_scope('d_log_pA'):
-            d_log_pA, log_pA = self.m_model.dx_log_px(self.A)
+        with tf.variable_scope('dx_log_pA'):
+            self.dx_log_pA, self.log_pA = self.m_model.dx_log_px(self.A)
         with tf.variable_scope('n_A'):
-            '''Check!'''
-            sum_d_log_pA_T_k_A_A = tf.matmul(tf.transpose(self.k_A_A), d_log_pA)
-            phi_A = (sum_d_log_pA_T_k_A_A + self.sum_d_A_k_A_A) / self.n_leaders
+            self.sum_d_log_pA_T_k_A_A = tf.matmul(self.k_A_A, self.dx_log_pA)
+            phi_A = (self.sum_d_log_pA_T_k_A_A + self.sum_d_A_k_A_A) / self.n_leaders
             n_A = self.A.assign(self.A + self.step_size * phi_A)
         with tf.variable_scope('n_B'):
-            '''Check!'''
-            sum_d_log_pA_T_k_A_B = tf.matmul(tf.transpose(self.k_A_B), d_log_pA)
-            phi_B = (sum_d_log_pA_T_k_A_B + self.sum_d_A_k_A_B) / self.n_leaders
+            self.sum_d_log_pA_T_k_A_B = tf.matmul(tf.transpose(self.k_A_B), self.dx_log_pA)
+            phi_B = (self.sum_d_log_pA_T_k_A_B + self.sum_d_A_k_A_B) / self.n_leaders
             n_B = self.B.assign(self.B + self.step_size * phi_B)
-        # See http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf
         with tf.variable_scope('d_B_phi_B'):
             if self.kernel == 'se':
+            # See http://mlg.eng.cam.ac.uk/mchutchon/DifferentiatingGPs.pdf
                 d_B_phi_B = []
                 # sum_d_B_d_A_k_A_B_gc = []
                 for i in range(self.n_followers):
@@ -267,9 +266,10 @@ class SteinIS(object):
                 # self.d_B_phi_B = d_B_phi_B
             elif self.kernel == 'fisher':
                 d_B_k_A_B = self.k_x_dx(self.A_dw_log_px, self.B_dx_dw_log_px) + self.k_x_dx(self.A_dmu_log_px, self.B_dx_dmu_log_px) + self.k_x_dx(self.A_dsigma2_log_px, self.B_dx_dsigma2_log_px)
-                sum_d_log_pA_d_B_k_A_B_T = sum_dx_log_px_T_d_kernel(d_log_pA, d_B_k_A_B)
-                sum_d_B_d_A_k_A_B = self.sum_d_d_kernel(self.B_dx_dw_log_px, self.A_dx_dw_log_px) + self.sum_d_d_kernel(self.B_dx_dmu_log_px, self.A_dx_dmu_log_px) + self.sum_d_d_kernel(self.B_dx_dsigma2_log_px, self.A_dx_dsigma2_log_px)
-                d_B_phi_B = tf.transpose(sum_d_log_pA_d_B_k_A_B_T + sum_d_B_d_A_k_A_B) / self.n_leaders
+                # self.dx_log_pA, self.d_B_k_A_B = d_log_pA, d_B_k_A_B
+                sum_d_log_pA_d_B_k_A_B_T = self.sum_dx_log_px_T_k_x_dx(self.dx_log_pA, d_B_k_A_B)
+                sum_d_B_d_A_k_A_B = self.sum_d_d_kernel(self.A_dx_dw_log_px, self.B_dx_dw_log_px) + self.sum_d_d_kernel(self.A_dx_dmu_log_px, self.B_dx_dmu_log_px) + self.sum_d_d_kernel(self.A_dx_dsigma2_log_px, self.B_dx_dsigma2_log_px)
+                d_B_phi_B = sum_d_log_pA_d_B_k_A_B_T + sum_d_B_d_A_k_A_B / self.n_leaders
         with tf.variable_scope('density_update'):
             I = tf.eye(self.dim, dtype=tf.float64)
             # self.I_d_B_phi_B = tf.map_fn(lambda x: (I + self.step_size * x), d_B_phi_B)

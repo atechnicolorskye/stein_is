@@ -1,4 +1,3 @@
-from __future__ import print_function
 from multiprocessing import Pool, Process, Queue, Event
 from stein_is import GMM, SteinIS
 
@@ -18,10 +17,10 @@ def stein_is_session(params):
     )as sess:
         [n_runs, initial_mu, initial_sigma, n_leaders, n_followers, iterations, step_size_alpha, step_size_beta, sess_num] = params
 
-        print('Session', str(sess_num), 'has started')
+        print 'Session ' + str(sess_num) + ' has started'
 
         sess_MSE = []
-        # sess_start = time.time()
+        sess_start = time.time()
         c_pool = 0
         # log_q_update = np.zeros(n_followers)
 
@@ -39,44 +38,42 @@ def stein_is_session(params):
         model = SteinIS(mm, dim, n_leaders, n_followers, initial_mu, initial_sigma, kernel)
         # writer = tf.summary.FileWriter('Graphs', graph=tf.get_default_graph())
 
-        for _ in range(n_runs):
+        for run in range(n_runs):
             sess.run(tf.global_variables_initializer())
             run_start = time.time()
             # B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers, dim))
             for i in range(1, iterations + 1):
                 step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
-                # _, A, A_dw_log_px, A_dmu_log_px, A_dsigma2_log_px, A_dmu_log_px_ = sess.run([model.updates, model.A, model.A_dw_log_px, model.A_dmu_log_px, model.A_dsigma2_log_px, model.A_dmu_log_px_], feed_dict={model.step_size: step_size})
-                k_A_A = sess.run([model.k_A_A], feed_dict={model.step_size: step_size})
-                pdb.set_trace()
-                # A_ = A
-                # B_ = B
-                # log_q_update_ = log_q_update
-                # k_A_A_ = k_A_A
-                # k_A_B_ = k_A_B
-                # d_log_pA_ = d_log_pA
+                # Think about dx_log_pA and what it represents, why does it dominate the update term?
+                # Can we do something like Adagrad where we maximise log_pA in a 'unit ball' regardless of dimensions?
+                _, log_B = sess.run([model.updates, mm.mix.log_prob(model.B)], feed_dict={model.step_size: step_size})
+                print log_B
+                # _, A, log_pA, dx_log_pA = sess.run([model.updates, model.A, model.log_pA, model.dx_log_pA], feed_dict={model.step_size: step_size})
+                # A, A_dw_log_px, A_dmu_log_px, A_dsigma2_log_px, A_dmu_log_px_ = sess.run([model.updates, model.A, model.A_dw_log_px, model.A_dmu_log_px, model.A_dsigma2_log_px, model.A_dmu_log_px_], feed_dict={model.step_size: step_size})
+                # pdb.set_trace()
                 if i % 800 == 0:
                     normalisation_constant = np.sum(sess.run(tf.exp(model.m_model.log_px(model.B)) / (model.q_density * tf.exp(-model.log_q_update)))) / n_followers
-                    # sess_MSE.append((normalisation_constant - np.exp(5.)) ** 2)
-                    sess_MSE.append(normalisation_constant - 1)
-                # run_time = time.time() - run_start
-            # print('Run', str(_), 'took', str(run_time))
-    print('Session complete')
+                    print normalisation_constant
+                    sess_MSE.append((normalisation_constant - 0.000744) / 0.000744)
+                    # sess_MSE.append((normalisation_constant - 1) ** 2)
+            run_time = time.time() - run_start
+            print 'Run ' + str(run) + ' took ' + str(run_time) + ' seconds'
+    print 'Session complete'
+    print str(n_runs) + ' runs took ' + str(time.time() - sess_start) + ' seconds'
     return sess_MSE
-# print(str(n_runs), 'runs took', str(time.time() - sess_start))
-
 
 if __name__ == '__main__':
     # Model parameters
     initial_mu = np.float64(0.)
     initial_sigma = np.sqrt(np.float64(2.))
-    n_leaders = 10
+    n_leaders = 5
     n_followers = 10
 
     # Hyperparameters
     num_processes = 1
     n_runs = 3
     iterations = 800
-    step_size_alpha = np.float64(.005)
+    step_size_alpha = np.float64(.0001)
     step_size_beta = np.float64(0.5)
 
     params = [[n_runs, initial_mu, initial_sigma, n_leaders, n_followers, iterations, step_size_alpha, step_size_beta, i] for i in range(num_processes)]
