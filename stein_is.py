@@ -269,9 +269,11 @@ class SteinIS(object):
                 # self.dx_log_pA, self.d_B_k_A_B = d_log_pA, d_B_k_A_B
                 sum_d_log_pA_d_B_k_A_B_T = self.sum_dx_log_px_T_k_x_dx(self.dx_log_pA, d_B_k_A_B)
                 sum_d_B_d_A_k_A_B = self.sum_d_d_kernel(self.A_dx_dw_log_px, self.B_dx_dw_log_px) + self.sum_d_d_kernel(self.A_dx_dmu_log_px, self.B_dx_dmu_log_px) + self.sum_d_d_kernel(self.A_dx_dsigma2_log_px, self.B_dx_dsigma2_log_px)
-                d_B_phi_B = sum_d_log_pA_d_B_k_A_B_T + sum_d_B_d_A_k_A_B / self.n_leaders
+                d_B_phi_B = (sum_d_log_pA_d_B_k_A_B_T + sum_d_B_d_A_k_A_B) / self.n_leaders
         with tf.variable_scope('density_update'):
             I = tf.eye(self.dim, dtype=tf.float64)
+            self.d_B_phi_B_update = self.step_size * d_B_phi_B
+            self.I_d_B_phi_B_update = I + self.d_B_phi_B_update
             # self.I_d_B_phi_B = tf.map_fn(lambda x: (I + self.step_size * x), d_B_phi_B)
             log_abs_det_I_d_B_phi_B = tf.map_fn(lambda x: logdet(I + self.step_size * x), d_B_phi_B)
             n_log_q_update = self.log_q_update.assign(self.log_q_update + log_abs_det_I_d_B_phi_B)
