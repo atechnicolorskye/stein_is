@@ -81,7 +81,7 @@ if __name__ == '__main__':
     p['initial_mu'] = np.float64(0.)
     p['initial_sigma'] = np.sqrt(np.float64(2.))
     p['n_leaders'] = 100
-    p['n_followers'] = 50
+    p['n_followers'] = 200
 
     # Hyperparameters
     p['kernel'] = 'se'
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     p['n_processes'] = 20
     p['n_runs'] = 25
     p['iterations'] = 800
-    p['step_size_alpha'] = np.float64(.005)
+    p['step_size_alpha'] = np.float64(.0005)
     p['step_size_beta'] = np.float64(0.5)
 
     params = [[p['kernel'], p['target'], p['n_runs'], p['initial_mu'], p['initial_sigma'], p['n_leaders'], p['n_followers'], p['iterations'], p['step_size_alpha'], p['step_size_beta'], i] for i in range(p['n_processes'])]
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     pool.close()
     # # Alternative
     # # results = pool.map_async(stein_is_session, params)
-    print(time.time() - start_time)
+    # print(time.time() - start_time)
 
     for i in range(p['n_processes']):
         if i == 0:
@@ -123,6 +123,7 @@ if __name__ == '__main__':
     output['NC'] = NC
     output['params'] = p
     np.save(str(p['kernel']) + '_' + str(p['target']) + '_a_' + str(p['step_size_alpha']) + '_b_' + str(p['step_size_beta']) + '_l_' + str(p['n_leaders']) + '_f_' + str(p['n_followers']) + '_sig2_' + str(p['initial_sigma'] ** 2) + '_runs_' + str(p['n_runs'] * p['n_processes']) + '.npy', output)
+    # print 'Done'
     print np.mean(MSE), np.mean(MSE_scaled), np.mean(NC)
 
 

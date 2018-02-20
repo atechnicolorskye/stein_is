@@ -256,7 +256,7 @@ class SteinIS(object):
                 for i in range(self.n_followers):
                     x = 2 * (self.A - self.B[i]) / self.h
                     term_1 = (2 / self.h) * tf.reduce_sum(self.k_A_B[:, i]) * tf.eye(self.dim, dtype=tf.float64)
-                    term_2 = tf.matmul((tf.transpose(d_log_pA) - tf.transpose(x)), tf.matmul(tf.diag(self.k_A_B[:, i]), x))
+                    term_2 = tf.matmul((tf.transpose(self.dx_log_pA) - tf.transpose(x)), tf.matmul(tf.diag(self.k_A_B[:, i]), x))
                     d_B_phi_B.append(term_1 + term_2)
                     # sum_d_B_d_A_k_A_B_gc.append(tf.reduce_sum((self.sum_d_A_k_A_Bp[i, :] - self.sum_d_A_k_A_Bn[i, :]) / 2e-05))
                 # self.sum_d_B_d_A_k_A_B, self.sum_d_B_d_A_k_A_B_gc = tf.stack(sum_d_B_d_A_k_A_B), sum_d_B_d_A_k_A_B_gc
