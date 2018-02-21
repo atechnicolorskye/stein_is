@@ -111,7 +111,7 @@ class GMM(object):
         dw_log_px_, dmu_log_px_, dsigma2_log_px_ =  tf.stack(dw_log_px_), tf.stack(dmu_log_px_), tf.stack(dsigma2_log_px_)
         dw_log_px, dmu_log_px, dsigma2_log_px = self.reshape_fish_comp(dw_log_px_), self.reshape_fish_comp(dmu_log_px_), self.reshape_fish_comp(dsigma2_log_px_)
         dtheta_log_px_ = tf.concat([dw_log_px, dmu_log_px, dsigma2_log_px], 1)
-        dtheta_log_px_norm = tf.norm(dtheta_log_px_, axis=1, keep_dims=True)
+        dtheta_log_px_norm = tf.norm(dtheta_log_px_, axis=1, keepdims=True)
         dtheta_log_px = dtheta_log_px_ / dtheta_log_px_norm
         return dtheta_log_px, [dw_log_px_ / dtheta_log_px_norm, dmu_log_px_ / dtheta_log_px_norm, dsigma2_log_px_ / dtheta_log_px_norm], dmu_log_px_, w_px_i_px / dtheta_log_px_norm, exponent_, xi_
 
@@ -146,8 +146,13 @@ class SteinIS(object):
         self.kernel = kernel
 
         # Inputs
-        self.B, self.q_density, self.log_q_update, self.A = self.initialise_variables(self.mu, self.sigma, self.n_leaders, self.n_followers, self.dim)
         self.step_size = tf.placeholder(tf.float64, [])
+        self.seed = tf.placeholder(tf.int32, [])
+        # if kernel == 'all':
+        #     self.B_f, self.B_se = self.B
+        #     self.q_density_f, self.q_density_se = self.q_density
+        #     self.log_q_update_f, self.log_q_update_se = self.log_q_update
+        #     self.A_f, self.A_se = self.A
 
         # Register functions for debugging
         # k_A_A, sum_d_A_k_A_A, A_Squared, h = self.construct_map()
@@ -156,6 +161,7 @@ class SteinIS(object):
         # # self.q_density = self.density_update()
 
         # Register functions
+        self.B, self.q_density, self.log_q_update, self.A = self.initialise_variables(self.mu, self.sigma, self.n_leaders, self.n_followers, self.dim)
         self.construct_leader_map()
         self.construct_follower_map()
         self.svgd_update()
@@ -179,8 +185,8 @@ class SteinIS(object):
 
         init_distribution = tf.contrib.distributions.MultivariateNormalDiag(mu * tf.zeros(dim, tf.float64), sigma * tf.ones(dim, tf.float64))
         # Not absolute
-        followers = tf.Variable(init_distribution.sample(n_followers))
-        leaders = tf.Variable(init_distribution.sample(n_leaders))
+        followers = tf.Variable(init_distribution.sample(sample_shape=n_followers))
+        leaders = tf.Variable(init_distribution.sample(sample_shape=n_leaders))
         # Absolute
         # followers = tf.Variable(tf.abs(init_distribution.sample(n_followers)))
         # leaders = tf.Variable(tf.abs(init_distribution.sample(n_leaders)))
@@ -194,7 +200,7 @@ class SteinIS(object):
         with tf.variable_scope('k_A_A'):
             if self.kernel == 'se':
                 x2_A_A_T = 2. * tf.matmul(self.A, tf.transpose(self.A))
-                self.A_Squared = tf.reduce_sum(tf.square(self.A), keep_dims=True, axis=1)
+                self.A_Squared = tf.reduce_sum(tf.square(self.A), keepdims=True, axis=1)
                 A_A_Distance_Squared = self.A_Squared - x2_A_A_T + tf.transpose(self.A_Squared)
                 # h_num = tf.square(median(tf.sqrt(A_A_Distance_Squared)))
                 h_num = median(A_A_Distance_Squared)
@@ -221,7 +227,7 @@ class SteinIS(object):
         with tf.variable_scope('k_A_B'):
             if self.kernel == 'se':
                 x2_A_B_T = 2. * tf.matmul(self.A, tf.transpose(self.B))
-                B_Squared = tf.reduce_sum(tf.square(self.B), keep_dims=True, axis=1)
+                B_Squared = tf.reduce_sum(tf.square(self.B), keepdims=True, axis=1)
                 A_B_Distance_Squared = self.A_Squared - x2_A_B_T + tf.transpose(B_Squared)
                 self.k_A_B = tf.exp(-A_B_Distance_Squared / self.h)
             elif self.kernel == 'fisher':
@@ -278,3 +284,4 @@ class SteinIS(object):
             log_abs_det_I_d_B_phi_B = tf.map_fn(lambda x: logdet(I + self.step_size * x), d_B_phi_B)
             n_log_q_update = self.log_q_update.assign(self.log_q_update + log_abs_det_I_d_B_phi_B)
         self.updates = tf.group(n_A, n_B, n_log_q_update)
+

@@ -9,12 +9,15 @@ import time
 import pdb
 
 
+# Check kernel outputs make sense
+# Check if Stein conidtions hold
+
 def stein_is_session(params):
     with tf.Session(config=tf.ConfigProto(
         device_count={'CPU' : 1, 'GPU' : 0},
     	allow_soft_placement=True,
     	log_device_placement=False,
-	inter_op_parallelism_threads=1,
+	    inter_op_parallelism_threads=1,
         intra_op_parallelism_threads=1
     )
     )as sess:
@@ -24,7 +27,7 @@ def stein_is_session(params):
 
         sess_MSE = []
         sess_MSE_scaled = []
-	sess_NC = []
+        sess_NC = []
         sess_start = time.time()
         c_pool = 0
         # log_q_update = np.zeros(n_followers)
@@ -38,16 +41,23 @@ def stein_is_session(params):
         elif target == 'ais':
             # Neal
             mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights =np.array([1. / 3, 2. / 3]); dim = 6
+        elif target == '6d_gauss':
+            # 6D Gaussian for sanity check
+            mu = np.array([1.]); sigma = np.array([0.1]); weights =np.array([1.]); dim = 6
 
-        # Initialise model
+        # Initialise mixture model
         mm = GMM(mu, sigma, weights, dim)
-        model = SteinIS(mm, dim, n_leaders, n_followers, initial_mu, initial_sigma, kernel)
         # writer = tf.summary.FileWriter('Graphs', graph=tf.get_default_graph())
 
         for run in range(n_runs):
+            # Set seed
+            tf.set_random_seed((sess_num * n_runs) + run)
+            # Intialise graph after setting random seed to make deterministic
+            model = SteinIS(mm, dim, n_leaders, n_followers, initial_mu, initial_sigma, kernel)
             sess.run(tf.global_variables_initializer())
             run_start = time.time()
             # B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers, dim))
+            # print sess_num, run, sess.run(model.A)
             for i in range(1, iterations + 1):
                 step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
                 # Think about dx_log_pA and what it represents, why does it dominate the update term?
@@ -70,9 +80,9 @@ def stein_is_session(params):
                         sess_MSE_scaled.append((np.abs(normalisation_constant - 0.000744) / 0.000744) ** 2)
                         sess_MSE.append((normalisation_constant - 0.000744) ** 2)
             run_time = time.time() - run_start
-            print 'Run ' + str(run) + ' took ' + str(run_time) + ' seconds'
-    print 'Session complete'
-    print str(n_runs) + ' runs took ' + str(time.time() - sess_start) + ' seconds'
+            # print 'Run ' + str(run) + ' took ' + str(run_time) + ' seconds'
+    # print 'Session complete'
+    # print str(n_runs) + ' runs took ' + str(time.time() - sess_start) + ' seconds'
     return sess_MSE, sess_MSE_scaled, sess_NC
 
 if __name__ == '__main__':
@@ -81,10 +91,10 @@ if __name__ == '__main__':
     p['initial_mu'] = np.float64(0.)
     p['initial_sigma'] = np.sqrt(np.float64(2.))
     p['n_leaders'] = 100
-    p['n_followers'] = 200
+    p['n_followers'] = 50
 
     # Hyperparameters
-    p['kernel'] = 'se'
+    p['kernel'] = 'fisher'
     p['target'] = 'ais'
     p['n_processes'] = 20
     p['n_runs'] = 25
