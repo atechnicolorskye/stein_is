@@ -9,15 +9,15 @@ import time
 import pdb
 
 
-# Check kernel outputs make sense
-# Check if Stein conidtions hold
+# Check kernel outputs make sense: They do, but Fisher seems to be less discriminative than SE in adversarial conditions
+# Check if Stein conidtions hold: Possibly, much smaller KSD when drawn from actual distribution
 
 def stein_is_session(params):
     with tf.Session(config=tf.ConfigProto(
-        device_count={'CPU' : 1, 'GPU' : 0},
-    	allow_soft_placement=True,
-    	log_device_placement=False,
-	    inter_op_parallelism_threads=1,
+        device_count={'CPU':1, 'GPU':0},
+        allow_soft_placement=True,
+        log_device_placement=False,
+        inter_op_parallelism_threads=1,
         intra_op_parallelism_threads=1
     )
     )as sess:
@@ -40,13 +40,14 @@ def stein_is_session(params):
             mu = np.array([[-.5], [.5], [-1.], [1.0], [-1.5], [1.5], [-2.0], [2.0], [-2.5], [2.5]]); sigma = np.sqrt(2) * np.ones(10); weights = (1 / 10.0) * np.ones(10); dim = 2
         elif target == 'ais':
             # Neal
-            mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights =np.array([1. / 3, 2. / 3]); dim = 6
+            mu = np.array([1., -1.]); sigma = np.array([0.1, 0.05]); weights = np.array([1. / 3, 2. / 3]); dim = 6
         elif target == '6d_gauss':
             # 6D Gaussian for sanity check
-            mu = np.array([1.]); sigma = np.array([0.1]); weights =np.array([1.]); dim = 6
+            mu = np.array([1.]); sigma = np.array([0.1]); weights = np.array([1.]); dim = 6
 
         # Initialise mixture model
         mm = GMM(mu, sigma, weights, dim)
+        # model = SteinIS(mm, dim, n_leaders, n_followers, initial_mu, initial_sigma, kernel)
         # writer = tf.summary.FileWriter('Graphs', graph=tf.get_default_graph())
 
         for run in range(n_runs):
@@ -58,6 +59,7 @@ def stein_is_session(params):
             run_start = time.time()
             # B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers, dim))
             # print sess_num, run, sess.run(model.A)
+            # pdb.set_trace()
             for i in range(1, iterations + 1):
                 step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
                 # Think about dx_log_pA and what it represents, why does it dominate the update term?
@@ -79,11 +81,15 @@ def stein_is_session(params):
                     elif target == 'ais':
                         sess_MSE_scaled.append((np.abs(normalisation_constant - 0.000744) / 0.000744) ** 2)
                         sess_MSE.append((normalisation_constant - 0.000744) ** 2)
+                    elif target == '6d_gauss':
+                        sess_MSE_scaled.append((np.abs(normalisation_constant - 0.000248) / 0.000248) ** 2)
+                        sess_MSE.append((normalisation_constant - 0.000248) ** 2)
             run_time = time.time() - run_start
-            # print 'Run ' + str(run) + ' took ' + str(run_time) + ' seconds'
-    # print 'Session complete'
-    # print str(n_runs) + ' runs took ' + str(time.time() - sess_start) + ' seconds'
+            print 'Run ' + str(run) + ' took ' + str(run_time) + ' seconds'
+    print 'Session complete'
+    print str(n_runs) + ' runs took ' + str(time.time() - sess_start) + ' seconds'
     return sess_MSE, sess_MSE_scaled, sess_NC
+
 
 if __name__ == '__main__':
     p = {}
@@ -91,15 +97,15 @@ if __name__ == '__main__':
     p['initial_mu'] = np.float64(0.)
     p['initial_sigma'] = np.sqrt(np.float64(2.))
     p['n_leaders'] = 100
-    p['n_followers'] = 50
+    p['n_followers'] = 100
 
     # Hyperparameters
-    p['kernel'] = 'fisher'
-    p['target'] = 'ais'
-    p['n_processes'] = 20
-    p['n_runs'] = 25
-    p['iterations'] = 800
-    p['step_size_alpha'] = np.float64(.0005)
+    p['kernel'] = 'se'
+    p['target'] = 'stein_is'
+    p['n_processes'] = 10
+    p['n_runs'] = 5
+    p['iterations'] = 1200
+    p['step_size_alpha'] = np.float64(.00005)
     p['step_size_beta'] = np.float64(0.5)
 
     params = [[p['kernel'], p['target'], p['n_runs'], p['initial_mu'], p['initial_sigma'], p['n_leaders'], p['n_followers'], p['iterations'], p['step_size_alpha'], p['step_size_beta'], i] for i in range(p['n_processes'])]
@@ -124,7 +130,7 @@ if __name__ == '__main__':
             MSE, MSE_scaled, NC = MSE + MSE_t, MSE_scaled + MSE_scaled_t, NC + NC_t
 
     # # No multiprocessing
-    # MSE, MSE_scaled = stein_is_session(params[0])
+    # MSE, MSE_scaled, NC = stein_is_session(params[0])
 
     # Save and output results
     output = {}

@@ -183,7 +183,11 @@ class SteinIS(object):
         # followers = tf.reshape(init_distribution.sample(self.n_trials * self.n_followers, seed=123), [self.n_trials, self.n_followers, self.h_dim]
         # leaders = tf.reshape(init_distribution.sample(self.n_trials * self.n_leaders, seed=123), [self.n_trials, self.n_leaders, self.h_dim]
 
-        init_distribution = tf.contrib.distributions.MultivariateNormalDiag(mu * tf.zeros(dim, tf.float64), sigma * tf.ones(dim, tf.float64))
+        # # Hack to check if Fisher kernel fulfils Stein's discrepancy
+        init_distribution = self.m_model.mix
+
+        # init_distribution = tf.contrib.distributions.MultivariateNormalDiag(mu * tf.zeros(dim, tf.float64), sigma * tf.ones(dim, tf.float64))
+
         # Not absolute
         followers = tf.Variable(init_distribution.sample(sample_shape=n_followers))
         leaders = tf.Variable(init_distribution.sample(sample_shape=n_leaders))
