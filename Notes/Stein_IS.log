@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.18 (TeX Live 2017) (preloaded format=pdflatex 2017.10.16)  8 FEB 2018 16:19
+This is pdfTeX, Version 3.14159265-2.6-1.40.18 (TeX Live 2017) (preloaded format=pdflatex 2017.10.16)  23 FEB 2018 23:51
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1083,7 +1083,10 @@ Underfull \hbox (badness 10000) in paragraph at lines 155--156
 
  []
 
-[4]
+
+Underfull \vbox (badness 1371) has occurred while \output is active []
+
+ [4]
 Underfull \hbox (badness 10000) in paragraph at lines 180--210
 
  []
@@ -1106,26 +1109,46 @@ Overfull \hbox (28.98233pt too wide) in paragraph at lines 264--264
 [] 
  []
 
-Package atveryend Info: Empty hook `BeforeClearDocument' on input line 265.
+
+Underfull \hbox (badness 10000) in paragraph at lines 274--282
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 274--282
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 274--282
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 274--282
+
+ []
+
+Package atveryend Info: Empty hook `BeforeClearDocument' on input line 286.
 [7]
-Package atveryend Info: Empty hook `AfterLastShipout' on input line 265.
+Package atveryend Info: Empty hook `AfterLastShipout' on input line 286.
  (./Stein_IS.aux)
-Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 265.
-Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 265.
+Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 286.
+Package atveryend Info: Executing hook `AtEndAfterFileList' on input line 286.
 Package rerunfilecheck Info: File `Stein_IS.out' has not changed.
-(rerunfilecheck)             Checksum: 1040E2BE521BE51B7F8EC4991143CAC5;693.
+(rerunfilecheck)             Checksum: E6EE726096368BAE692D53C5B1E5C2BF;751.
 Package logreq Info: Writing requests to 'Stein_IS.run.xml'.
 \openout1 = `Stein_IS.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 13490 strings out of 492995
- 215666 string characters out of 6132703
+ 13492 strings out of 492995
+ 215690 string characters out of 6132703
  683203 words of memory out of 5000000
- 16798 multiletter control sequences out of 15000+600000
+ 16799 multiletter control sequences out of 15000+600000
  14421 words of font info for 54 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 35i,17n,30p,842b,698s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 35i,17n,30p,828b,698s stack positions out of 5000i,500n,10000p,200000b,80000s
 </usr/local/texlive/2017/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
 ></usr/local/texlive/2017/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb>
 </usr/local/texlive/2017/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb><
@@ -1140,10 +1163,10 @@ ve/2017/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/local/texlive/
 2017/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2
 017/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/texlive/201
 7/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt9.pfb>
-Output written on Stein_IS.pdf (7 pages, 179533 bytes).
+Output written on Stein_IS.pdf (7 pages, 182764 bytes).
 PDF statistics:
- 199 PDF objects out of 1000 (max. 8388607)
- 174 compressed objects within 2 object streams
- 60 named destinations out of 1000 (max. 500000)
- 73 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 204 PDF objects out of 1000 (max. 8388607)
+ 179 compressed objects within 2 object streams
+ 61 named destinations out of 1000 (max. 500000)
+ 81 words of extra memory for PDF output out of 10000 (max. 10000000)
 

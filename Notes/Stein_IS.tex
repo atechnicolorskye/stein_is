@@ -149,7 +149,7 @@ With $\nabla_{x_{B_i}} \phi_B(x_{B_i})$ in hand, we update the density values us
 \newpage
 
 \section{Fisher Kernel}
-Instead of using the RBF kernel whose weaknesses are detailed in Zhuo et. al\footnote{\url{https://arxiv.org/pdf/1711.04425.pdf}}, we propose the use of the Fisher kernel which requires less parameter tuning (and could possibly sidestep the issues highlighted in Zhuo et. al) and might have better properties. The Fisher kernel is formally defined as $k(x, x') = \nabla_{\theta} \log(p(x|\theta) I^{-1} \nabla_{\theta} \log(p(x'|\theta)^T$ where $I$ is the Fisher matrix. In practice, the Fisher matrix is not computed to reduce computational cost, leading to the requirement that resulting kernel be normalised\footnote{\url{http://qwone.com/~jason/writing/normalizeKernel.pdf}} and made PSD as SVGD exploits the RHKS property for closed-form updates. We follow the format defined by the previous section.
+Instead of the RBF kernel whose weaknesses are detailed in Zhuo et. al\footnote{\url{https://arxiv.org/pdf/1711.04425.pdf}}, use the Fisher kernel which requires less parameter tuning (and could possibly sidestep the issues highlighted in Zhuo et. al) and might have better properties. The Fisher kernel is formally defined as $k(x, x') = \nabla_{\theta} \log(p(x|\theta) I^{-1} \nabla_{\theta} \log(p(x'|\theta)^T$ where $I$ is the Fisher matrix. In practice, the Fisher matrix is not computed to reduce computational cost, leading to the requirement that resulting kernel be normalised\footnote{\url{http://qwone.com/~jason/writing/normalizeKernel.pdf}} and made PSD as SVGD exploits the RHKS property for closed-form updates. We follow the format defined by the previous section.
 
 \subsection{Construct mapping for leaders}
 Like before, we can assume that $\nabla_x \log p(x_A^\ell|\theta)$ is obtained through automatic differentiation. However the issue this time is TensorFlow being unable to differentiate through a mixture model which requires analytical expressions for each parameter for the Gaussian Mixture Model\footnote{Checked against Matrix Cookbook} and $\nabla_x \nabla_{\theta} \log p(x_A^\ell|\theta)$ for $\nabla k(x, x')$.\\
@@ -262,4 +262,26 @@ Its transpose is
 &\nabla_{x_1} \nabla_{\sigma_i^2} \log \sum w_i p(x_1|\theta_i) \nonumber \\
 &=\frac{w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} \left[\xi_1 \left(\frac{\sum \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right) w_i p(x_1|\theta_i)}{\sum w_i p(x_1|\theta_i)} - \left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\right)^T + \textrm{diag}\left(\frac{x_1 - \mu_i}{\sigma_i^2}\right)\frac{1}{\sigma_i^2} \right]
 \end{align}
+
+\section{Performance}
+The following target distributions are used to test the performance of the RBF and Fisher kernel:
+\begin{itemize}
+\item 2D Gaussian mixture model with 10 mixture components
+\item 6D Gaussian (Suggested by Wittawat to check how well SteinIS performs in an easy case for 6D)
+\item 6D Guassian mixture model with mixture component
+\end{itemize}
+
+\noindent
+In all experiments, both leader and follower particles are sampled from $\mathcal{N}(0, 2)$ and then transformed with SVGD. The number of leader particles are fixed to be 100 across experiments. Performance is measured by the normalised MSE of the target distributions' normalising constant approximated by the transformed particles.\\ \\
+\noindent
+For the first target distribution, both the RBF and Fisher kernel do well as shown below. 
+The MSE is obtained over 500 independent runs with a different random seed set for each run. This ensures that the samples are the same across experiments for the two kernels, which enables fair comparison. $\alpha$ and $\beta$, the factors determining the learning rate, is set at $0.001$ and $0.5$ respectively. \\ \\
+% Show figure
+\noindent
+Moving on to the 6D Gaussian, the MSE degenerates to the same order of magnitude as the normalising constant which is 0.9999 and 0.9813 respectively. The results are averaged over 50 independent runs with the random seed set done previously with $\alpha$ and $\beta$ set at $5e-5$ and $0.5$.\\ \\ 
+\noindent
+Lastly, for the target distribution described in Neal's Annealed Importance Sampling paper, the MSE 
+
+
+
 \end{document}
