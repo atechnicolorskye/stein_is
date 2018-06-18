@@ -122,7 +122,6 @@ def stein_is_process(params):
             sess.run(tf.global_variables_initializer())
             run_start = time.time()
             # B, q_density, A = sess.run(initialise_variables(initial_mu, initial_sigma, n_leaders, n_followers, dim))
-            print 'Start', sess.run(model.m_model.log_px(model.B))
             for i in range(1, iterations + 1):
                 step_size = step_size_alpha * (1. + i) ** (-step_size_beta)
                 gamma = 1e-3 # np.exp(i - iterations)
@@ -146,9 +145,7 @@ def stein_is_process(params):
                         proc_MSE.append((normalisation_constant - 0.000248) ** 2)
                     proc_A_m.append(sess.run(tf.reduce_mean(model.A)))
                     proc_B_m.append(sess.run(tf.reduce_mean(model.B)))
-                    print 'Numerator', sess.run(model.m_model.log_px(model.B))
-                    print 'Denominator', sess.run(tf.log(model.q_density) - model.log_q_update)
-            run_time = time.time() - run_start
+                    run_time = time.time() - run_start
             print 'Run ' + str(run) + ' took ' + str(run_time) + ' seconds'
 
     print 'Process complete'
@@ -169,7 +166,7 @@ if __name__ == '__main__':
 
     # Hyperparameters
     p['kernel'] = 'fisher'
-    p['target'] = 'ais'
+    p['target'] = 'stein_is'
     p['n_processes'] = 6
     p['n_runs'] = 20
     p['iterations'] = 1200
